@@ -1,166 +1,144 @@
-'''
-Author: LetMeFly
-Date: 2023-09-12 20:49:21
-LastEditors: LetMeFly
-LastEditTime: 2023-12-22 23:32:59
-Description: 开源于https://github.com/LetMeFly666/YuketangAutoPlayer 欢迎issue、PR
-'''
-from selenium import webdriver
-from selenium.webdriver import ActionChains
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from time import sleep
-import random
+import json
+import logging
+import threading
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+# local query module (sends POST to api2 using headers from config.json)
+import InquryClassWater as inquiry
 
 
-IF_HEADLESS = False  # 是否以无窗口模式运行（首次运行建议使用有窗口模式以观察是否符合预期）
-COURSE_URL = 'https://www.yuketang.cn/v2/web/studentLog/23885826?university_id=2628&platform_id=3&classroom_id=23885826&content_url='  # 要刷的课的地址（获取方式见README）
-COOKIE = 'x0xwecwu3d89wy25ij4dhfkcnd3ij5zz'  # 打死也不要告诉别人哦（获取方式见README）
-
-services=webdriver.ChromeService('./chromedriver.exe')
-option = webdriver.ChromeOptions()
-
-if IF_HEADLESS:
-    option.add_argument('--headless')
-
-driver = webdriver.Chrome(options=option,service=services)
-driver.maximize_window()
-IMPLICITLY_WAIT = 10
-driver.implicitly_wait(IMPLICITLY_WAIT)
-IS_COMMOONUI = False
-
-def str2dic(s):
-    d = dict()
-    for i in s.split('; '):
-        temp = i.split('=')
-        d[temp[0]] = temp[1]
-    return d
+SCHEDULE_FILE = Path(__file__).parent / "weekly.json"
+LOG_FILE = Path(__file__).parent / "attendance.log"
 
 
-def setCookie(cookies):
-    driver.delete_all_cookies()
-    for name, value in cookies.items():
-        driver.add_cookie({'name': name, 'value': value, 'path': '/'})
+def setup_logging() -> None:
+	logging.basicConfig(
+		level=logging.INFO,
+		format="%(asctime)s [%(levelname)s] %(message)s",
+		handlers=[
+			logging.FileHandler(LOG_FILE, encoding="utf-8"),
+			logging.StreamHandler(),
+		],
+	)
 
 
-def ifVideo(div):
-    global tempDiv
-    for i in div.find_elements(By.TAG_NAME, 'i'):
-        i_class = i.get_attribute('class')
-        if 'icon--suo' in i_class:  # 锁的图标，表明视频未开放
-            return False
-    try:
-        i = div.find_element(By.TAG_NAME, 'i')
-    except:
-        return False  # 每个小结后面都存在空行<li>
-    i_class = i.get_attribute('class')
-    return 'icon--shipin' in i_class
+def load_schedule(path: Path = SCHEDULE_FILE) -> List[Tuple[datetime, List[str]]]:
+	"""从 JSON 文件读取日程并返回 (开始时间, [课程名...]) 的列表。
+
+	支持时间格式："%Y-%m-%d %H:%M:%S"。任何无法解析的条目会被跳过并记录。
+	"""
+	if not path.exists():
+		logging.warning("schedule file not found: %s", path)
+		return []
+
+	try:
+		raw = json.loads(path.read_text(encoding="utf-8"))
+	except Exception as e:
+		logging.exception("failed to read schedule file: %s", e)
+		return []
+
+	events: List[Tuple[datetime, List[str]]] = []
+	for k, v in raw.items():
+		try:
+			dt = datetime.strptime(k, "%Y-%m-%d %H:%M:%S")
+		except Exception:
+			logging.warning("unrecognized datetime format, skipping: %s", k)
+			continue
+		if not isinstance(v, list):
+			logging.warning("unexpected value for %s, expected list, got %s", k, type(v))
+			continue
+		events.append((dt, v))
+
+	events.sort(key=lambda x: x[0])
+	return events
 
 
-def getAllvideos_notFinished(allClasses):
-    driver.implicitly_wait(0.1)  # 找不到元素时会找满implicitly_wait秒
-    allVideos = []
-    for thisClass in allClasses:
-        if ifVideo(thisClass) and '已完成' not in thisClass.text:
-            allVideos.append(thisClass)
-    driver.implicitly_wait(IMPLICITLY_WAIT)
-    return allVideos
+def check_attendance(event_time: datetime, courses: List[str]) -> None:
+	"""占位函数：在课程开始前 5 分钟被调用以查询考勤状态。
+
+	TODO: 将来替换为实际的查询实现（由用户提供）。
+	当前行为：记录将要查询的课程和时间。
+	"""
+	logging.info("checking attendance for %s at %s", courses, event_time.isoformat())
+
+	try:
+		# 使用 Inqury 模块内的便捷方法构造并发送考勤查询请求（会把 startdate/enddate 设为课程当日）
+		result = inquiry.post_attendance_query(event_time, courses=courses)
+		if result is None:
+			logging.warning("no response or error when querying attendance for %s", courses)
+		else:
+			logging.info("attendance query result for %s: %s", courses, result)
+			# TODO: 调用数据清洗/解析逻辑（用户将提供规则）
+	except Exception:
+		logging.exception("unexpected error while querying attendance for %s", courses)
 
 
-def get1video_notFinished(allClasses):
-    for thisClass in allClasses:
-        if ifVideo(thisClass) and '已完成' not in thisClass.text:
-            return thisClass
-    return None
+def scheduler_loop(poll_interval: int = 30) -> None:
+	"""持续运行的调度循环。
+
+	- 每 poll_interval 秒重新加载 `weekly.json`。
+	- 对于每个事件，如果当前时间 >= (start_time - 5min) 且尚未处理，则调用 check_attendance。
+	"""
+	processed = set()  # store event_time.isoformat() strings we've handled
+
+	logging.info("scheduler started, watching %s", SCHEDULE_FILE)
+
+	while True:
+		try:
+			now = datetime.now()
+			events = load_schedule()
+
+			for start_dt, courses in events:
+				key = f"{start_dt.isoformat()}|{','.join(courses)}"
+				if key in processed:
+					continue
+
+				check_time = start_dt - timedelta(minutes=5)
+
+				# 如果现在已经过了课程开始时间，则跳过（太迟了）
+				if now >= start_dt:
+					logging.debug("event %s already started, skipping", start_dt)
+					processed.add(key)
+					continue
+
+				# 如果到了或超过预检时间但未到上课时间，触发检查
+				if check_time <= now < start_dt:
+					logging.info("triggering attendance check for %s (starts at %s)", courses, start_dt)
+					try:
+						check_attendance(start_dt, courses)
+					except Exception:
+						logging.exception("error while checking attendance for %s", start_dt)
+					processed.add(key)
+
+			# Sleep and then re-evaluate. 如果文件更新，新的事件会被加载并处理。
+			time.sleep(poll_interval)
+
+		except KeyboardInterrupt:
+			logging.info("scheduler received KeyboardInterrupt, exiting")
+			break
+		except Exception:
+			logging.exception("unexpected error in scheduler loop")
+			time.sleep(poll_interval)
 
 
-homePageURL = 'https://' + COURSE_URL.split('https://')[1].split('/')[0] + '/'
-if 'www.yuketang.cn' in homePageURL:
-    IS_COMMOONUI = True
-# driver.get('https://grsbupt.yuketang.cn/')
-driver.get(homePageURL)
-setCookie({'sessionid': COOKIE})
-driver.get(COURSE_URL)
-sleep(3)
-if 'pro/portal/home' in driver.current_url:
-    print('cookie失效或设置有误，请重设cookie或选择每次扫码登录')
-    driver.get(homePageURL)
-    driver.find_element(By.CLASS_NAME, 'login-btn').click()
-    print("请扫码登录")
-    while 'courselist' not in driver.current_url:  # 判断是否已经登录成功
-        sleep(0.5)
-    print('登录成功')
-    driver.get(COURSE_URL)
+def main() -> None:
+	setup_logging()
+	logging.info("attendance scheduler starting up")
+
+	# 后台线程运行调度器，这样 main 可以扩展做其它事情（或简单等待）。
+	t = threading.Thread(target=scheduler_loop, name="scheduler", daemon=True)
+	t.start()
+
+	try:
+		# 主线程保持运行，守护子线程。按 Ctrl+C 停止。
+		while t.is_alive():
+			t.join(timeout=1)
+	except KeyboardInterrupt:
+		logging.info("received Ctrl+C, shutting down")
 
 
-def change2speed2():
-    speedbutton = driver.find_element(By.TAG_NAME, 'xt-speedbutton')
-    ActionChains(driver).move_to_element(speedbutton).perform()
-    ul = speedbutton.find_element(By.TAG_NAME, 'ul')
-    lis = ul.find_elements(By.TAG_NAME, 'li')
-    li_speed2 = lis[0]
-    diffY = speedbutton.location['y'] - li_speed2.location['y']
-    # ActionChains(driver).move_to_element_with_offset(speedbutton, 3, 5).perform()
-    # ActionChains(driver).click().perform()
-    # 我也不知道为啥要一点一点移动上去，反正直接移动上去的话，点击是无效的
-    for i in range(diffY // 10):  # 可能不是一个好算法
-        ActionChains(driver).move_by_offset(0, -10).perform()
-        sleep(0.5)
-    sleep(0.8)
-    ActionChains(driver).click().perform()
-
-
-def mute1video():
-    if driver.execute_script('return video.muted;'):
-        return
-    voice = driver.find_element(By.TAG_NAME, 'xt-volumebutton')
-    ActionChains(driver).move_to_element(voice).perform()
-    ActionChains(driver).click().perform()
-
-
-def finish1video():
-    if IS_COMMOONUI:
-        scoreList = driver.find_element(By.ID, 'tab-student_school_report')
-        scoreList.click()
-        allClasses = driver.find_elements(By.CLASS_NAME, 'study-unit')
-    else:
-        allClasses = driver.find_elements(By.CLASS_NAME, 'leaf-detail')
-    print('正在寻找未完成的视频，请耐心等待')
-    allVideos = getAllvideos_notFinished(allClasses)
-    if not allVideos:
-        return False
-    video = allVideos[0]
-    driver.execute_script('arguments[0].scrollIntoView(false);', video)
-    if IS_COMMOONUI:
-        span = video.find_element(By.TAG_NAME, 'span')
-        span.click()
-    else:
-        video.click()
-    print('正在播放')
-    driver.switch_to.window(driver.window_handles[-1])
-    WebDriverWait(driver, 10).until(lambda x: driver.execute_script('video = document.querySelector("video"); console.log(video); return video;'))  # 这里即使2次sleep3s选中的video还是null
-    driver.execute_script('videoPlay = setInterval(function() {if (video.paused) {video.play();}}, 200);')
-    driver.execute_script('setTimeout(() => clearInterval(videoPlay), 5000)')
-    driver.execute_script('addFinishMark = function() {finished = document.createElement("span"); finished.setAttribute("id", "LetMeFly_Finished"); document.body.appendChild(finished); console.log("Finished");}')
-    driver.execute_script('lastDuration = 0; setInterval(() => {nowDuration = video.currentTime; if (nowDuration < lastDuration) {addFinishMark()}; lastDuration = nowDuration}, 200)')
-    driver.execute_script('video.addEventListener("pause", () => {video.play()})')
-    mute1video()
-    change2speed2()
-    while True:
-        if driver.execute_script('return document.querySelector("#LetMeFly_Finished");'):
-            print('finished, wait 5s')
-            sleep(5)  # 再让它播5秒
-            driver.close()
-            driver.switch_to.window(driver.window_handles[-1])
-            return True
-        else:
-            print(f'正在播放视频 | not finished yet | 随机数: {random.random()}')
-            sleep(3)
-    return False
-
-
-while finish1video():
-    driver.refresh()
-driver.quit()
-print('恭喜你！全部播放完毕')
-sleep(5)
+if __name__ == "__main__":
+	main()

@@ -178,7 +178,7 @@ def main():
     parser = argparse.ArgumentParser(description='生成周模式课程日历：YYYY-MM-DD HH:MM:SS -> [课程名]')
     parser.add_argument('--input', '-i', help='课表 JSON 文件（默认 sample.json）', default='sample.json')
     parser.add_argument('--periods', '-p', help='节次映射 JSON 文件（默认 periods.json）', default='periods.json')
-    parser.add_argument('--output', '-o', default='weekly_mapping.json', help='输出文件路径，默认 weekly_mapping.json')
+    parser.add_argument('--output', '-o', default='weekly.json', help='输出文件路径，默认 weekly.json')
     args = parser.parse_args()
 
     # 强制要求两个文件存在，否则直接报错退出
