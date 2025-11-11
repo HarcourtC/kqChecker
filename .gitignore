@@ -4,4 +4,4 @@ attendance.log
 mindmap.md
 *.ics
 kq/__pycache__
-scripts/
+scripts/__pycache__
