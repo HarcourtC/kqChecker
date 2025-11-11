@@ -17,6 +17,9 @@ except Exception:  # pragma: no cover - optional runtime dependency
 from pathlib import Path
 import time
 
+import argparse
+import json
+
 try:
     import requests
 except Exception:  # pragma: no cover - optional runtime dependency
@@ -147,7 +150,8 @@ def save_weekly(path, calendar_map):
     p = Path(path)
     tmp = p.with_name(p.name + '.tmp')
     tmp.write_text(json.dumps(calendar_map, ensure_ascii=False, indent=2), encoding='utf-8')
-    p.replace(tmp)
+    # write tmp then move/replace into final path
+    tmp.replace(p)
 
 
 def fetch_from_api1(payload: Dict[str, Any], timeout: int = 10, retries: int = 2, periods_path: Optional[str] = None, use_week_of_today: bool = True) -> Dict[str, List[str]]:
@@ -210,6 +214,108 @@ def fetch_from_api1(payload: Dict[str, Any], timeout: int = 10, retries: int = 2
     period_map = build_period_map(periods_json)
     cal = build_weekly_calendar(rows, period_map, use_week_of_today=use_week_of_today)
     return cal
+
+
+def main(argv=None) -> int:
+    """Command-line entry for schedulegen: generate `weekly.json` from API or sample.
+
+    Mirrors the previous behavior of the repository-level script `get_weekly_json.py`.
+    """
+    parser = argparse.ArgumentParser(description="Generate weekly.json from API or sample data")
+    parser.add_argument("--sample", action="store_true", help="Generate from sample.json (safe, offline)")
+    parser.add_argument("--dry-run", action="store_true", help="Do not write files; just print output")
+    parser.add_argument("--termNo", type=int, help="Override termNo for api1 payload")
+    parser.add_argument("--week", type=int, help="Override week for api1 payload")
+    parser.add_argument("--save-payload", action="store_true", help="Save the provided termNo/week into config.json as api1_payload")
+    args = parser.parse_args(argv)
+
+    ROOT = Path(__file__).parent.parent
+    OUT = ROOT / "weekly.json"
+    SAMPLE = ROOT / "sample.json"
+
+    # load_config is available in kq.config
+    try:
+        from .config import load_config
+    except Exception:
+        def load_config():
+            p = Path(__file__).parent.parent / 'config.json'
+            try:
+                return json.loads(p.read_text(encoding='utf-8'))
+            except Exception:
+                return {}
+
+    if args.sample:
+        if not SAMPLE.exists():
+            print("sample.json not found")
+            return 2
+        s = json.loads(SAMPLE.read_text(encoding='utf-8'))
+        rows = extract_rows(s)
+        periods = {}
+        periods_path = ROOT / 'periods.json'
+        if periods_path.exists():
+            try:
+                periods = json.loads(periods_path.read_text(encoding='utf-8'))
+            except Exception:
+                periods = {}
+        period_map = build_period_map(periods)
+        sched = build_weekly_calendar(rows, period_map)
+    else:
+        cfg = load_config()
+        url = cfg.get("api1")
+        if not url:
+            print("api1 not configured in config.json; use --sample for testing")
+            return 2
+
+        api1_payload_cfg = cfg.get("api1_payload") if isinstance(cfg, dict) else {}
+        term_no = api1_payload_cfg.get('termNo') if isinstance(api1_payload_cfg, dict) else None
+        week_no = api1_payload_cfg.get('week') if isinstance(api1_payload_cfg, dict) else None
+
+        # CLI overrides
+        if getattr(args, 'termNo', None) is not None:
+            term_no = args.termNo
+        if getattr(args, 'week', None) is not None:
+            week_no = args.week
+
+        term_no = term_no or 606
+        week_no = week_no or 10
+
+        payload = {"termNo": int(term_no), "week": int(week_no)}
+
+        # Optionally persist payload into config.json
+        if getattr(args, 'save_payload', False):
+            cfg_path = Path(__file__).parent.parent / 'config.json'
+            try:
+                cur = json.loads(cfg_path.read_text(encoding='utf-8')) if cfg_path.exists() else {}
+            except Exception:
+                cur = {}
+            cur['api1_payload'] = {'termNo': int(term_no), 'week': int(week_no)}
+            try:
+                cfg_path.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding='utf-8')
+                print(f"Saved api1_payload to {cfg_path}")
+            except Exception as e:
+                print("Failed to save api1_payload:", e)
+        try:
+            sched = fetch_from_api1(payload)
+        except Exception as e:
+            print("Failed to fetch from api1:", e)
+            return 3
+
+    out_text = json.dumps(sched, ensure_ascii=False, indent=2)
+    if args.dry_run:
+        print(out_text)
+        return 0
+
+    try:
+        save_weekly(OUT, sched)
+        print("Wrote", OUT)
+    except Exception:
+        print("Failed to save weekly.json using kq.schedulegen")
+        return 5
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
 
 
 def fetch_periods_from_api(payload: Dict[str, Any], url: Optional[str] = None, timeout: int = 10, retries: int = 2, save_path: Optional[str] = None) -> Dict[str, Any]:

@@ -2,5 +2,5 @@ geckodriver.exe
 *.json
 attendance.log
 mindmap.md
-weekly_schedule.ics
+*.ics
 kq/__pycache__

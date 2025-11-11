@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 try:
     import requests
@@ -11,6 +11,7 @@ except Exception:
     requests = None
 
 from .config import load_config
+from .matcher import match_records_by_time
 
 
 def post_attendance_query(event_time, courses=None, pageSize: int = 10, current: int = 1, calendarBh: str = "", timeout: int = 10, retries: int = 2, extra_headers: Optional[Dict[str, str]] = None) -> bool:
@@ -131,3 +132,6 @@ def clean_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         except Exception:
             logging.debug("error cleaning record", exc_info=True)
     return cleaned
+
+
+# time-based matching moved to kq.matcher.match_records_by_time
