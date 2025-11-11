@@ -1,5 +1,10 @@
 name: Sync main → dev
 
+# Request explicit permissions so the GITHUB_TOKEN can create PRs
+permissions:
+  contents: read
+  pull-requests: write
+
 on:
   push:
     branches: [ main ]
