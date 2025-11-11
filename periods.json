@@ -1,0 +1,18 @@
+{
+  "code": 200,
+  "success": true,
+  "data": [
+    { "jc": "1", "starttime": "08:00:00", "endtime": "08:50:00" },
+    { "jc": "2", "starttime": "09:00:00", "endtime": "09:50:00" },
+    { "jc": "3", "starttime": "10:10:01", "endtime": "11:00:00" },
+    { "jc": "4", "starttime": "11:10:00", "endtime": "12:00:00" },
+    { "jc": "5", "starttime": "14:00:00", "endtime": "14:50:00" },
+    { "jc": "6", "starttime": "15:00:00", "endtime": "15:50:00" },
+    { "jc": "7", "starttime": "16:10:01", "endtime": "17:00:00" },
+    { "jc": "8", "starttime": "17:10:00", "endtime": "18:00:00" },
+    { "jc": "9", "starttime": "19:10:00", "endtime": "20:00:00" },
+    { "jc": "10", "starttime": "20:10:00", "endtime": "21:00:00" },
+    { "jc": "11", "starttime": "21:10:01", "endtime": "22:00:00" }
+  ],
+  "msg": "操作成功"
+}
