@@ -210,3 +210,65 @@ def fetch_from_api1(payload: Dict[str, Any], timeout: int = 10, retries: int = 2
     period_map = build_period_map(periods_json)
     cal = build_weekly_calendar(rows, period_map, use_week_of_today=use_week_of_today)
     return cal
+
+
+def fetch_periods_from_api(payload: Dict[str, Any], url: Optional[str] = None, timeout: int = 10, retries: int = 2, save_path: Optional[str] = None) -> Dict[str, Any]:
+    """Fetch periods.json-like JSON from the configured api3 or provided URL.
+
+    Parameters:
+    - payload: dict to POST
+    - url: optional override for api3 URL from config.json
+    - save_path: optional path to write the returned JSON; if None defaults to repo root 'periods.json'
+
+    Returns the parsed JSON as a dict/list.
+    """
+    # lazy-load config to avoid circular imports at module import time
+    try:
+        from .config import load_config
+    except Exception:
+        def load_config():
+            p = Path(__file__).parent.parent / 'config.json'
+            try:
+                return json.loads(p.read_text(encoding='utf-8'))
+            except Exception:
+                return {}
+
+    cfg = load_config()
+    api_url = url or (cfg.get('api3') if isinstance(cfg, dict) else None)
+    if not api_url:
+        raise RuntimeError('api3 URL not configured in config.json and no --url provided')
+
+    if requests is None:
+        raise RuntimeError('requests library not available; install requests')
+
+    session = requests.Session()
+    last_exc = None
+    resp_json = None
+    for attempt in range(retries + 1):
+        try:
+            resp = session.post(api_url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            resp_json = resp.json()
+            break
+        except Exception as e:
+            last_exc = e
+            time.sleep(1)
+
+    if resp_json is None:
+        raise last_exc or RuntimeError('failed to fetch from api3')
+
+    # save to disk if requested
+    if save_path:
+        out_path = Path(save_path)
+    else:
+        out_path = Path(__file__).parent.parent / 'periods.json'
+
+    try:
+        tmp = out_path.with_name(out_path.name + '.tmp')
+        tmp.write_text(json.dumps(resp_json, ensure_ascii=False, indent=2), encoding='utf-8')
+        tmp.replace(out_path)
+    except Exception:
+        # if saving fails, don't treat as fatal for callers that only wanted the JSON
+        pass
+
+    return resp_json
