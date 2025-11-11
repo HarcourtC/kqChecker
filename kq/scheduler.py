@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, date
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Any, Dict
 
 from .inquiry import post_attendance_query
 
@@ -16,7 +16,7 @@ ROOT = Path(__file__).parent.parent
 SCHEDULE_FILE = ROOT / "weekly.json"
 
 
-def load_schedule(path: Path = SCHEDULE_FILE) -> List[Tuple[datetime, List[str]]]:
+def load_schedule(path: Path = SCHEDULE_FILE) -> List[Tuple[datetime, List[Dict[str, Any]]]]:
     if not path.exists():
         logging.warning("schedule file not found: %s", path)
         return []
@@ -36,7 +36,21 @@ def load_schedule(path: Path = SCHEDULE_FILE) -> List[Tuple[datetime, List[str]]
         if not isinstance(v, list):
             logging.warning("unexpected value for %s, expected list", k)
             continue
-        events.append((dt, v))
+        # normalize each item to an entry dict: {course, room, raw}
+        entries: List[Dict[str, Any]] = []
+        for item in v:
+            if isinstance(item, dict) and 'course' in item:
+                entries.append(item)
+            elif isinstance(item, str):
+                entries.append({'course': item, 'room': None, 'raw': None})
+            else:
+                # unknown shape: attempt best-effort extraction
+                try:
+                    course = str(item)
+                except Exception:
+                    course = ''
+                entries.append({'course': course, 'room': None, 'raw': item})
+        events.append((dt, entries))
 
     events.sort(key=lambda x: x[0])
     return events
@@ -53,20 +67,22 @@ def setup_logging(log_file: Path = Path(__file__).parent.parent / "attendance.lo
     )
 
 
-def check_attendance(event_time, courses, dry_run: bool = False) -> None:
-    logging.info("checking attendance for %s at %s", courses, event_time.isoformat())
+def check_attendance(event_time, entries, dry_run: bool = False) -> None:
+    # entries: list of dicts {course, room, raw}
+    course_names = [e.get('course') if isinstance(e, dict) else str(e) for e in entries]
+    logging.info("checking attendance for %s at %s", course_names, event_time.isoformat())
     try:
         if dry_run:
-            logging.info("dry-run enabled: skipping network call for %s", courses)
+            logging.info("dry-run enabled: skipping network call for %s", course_names)
             return
 
-        found = post_attendance_query(event_time, courses=courses)
+        found = post_attendance_query(event_time, courses=entries)
         if found:
-            logging.info("attendance records found for %s", courses)
+            logging.info("attendance records found for %s", course_names)
         else:
-            logging.info("no attendance records for %s", courses)
+            logging.info("no attendance records for %s", course_names)
     except Exception:
-        logging.exception("error querying attendance for %s", courses)
+        logging.exception("error querying attendance for %s", course_names)
 
 
 def scheduler_loop(poll_interval: int = 30) -> None:
@@ -78,7 +94,9 @@ def scheduler_loop(poll_interval: int = 30) -> None:
             now = datetime.now()
             events = load_schedule()
             for start_dt, courses in events:
-                key = f"{start_dt.isoformat()}|{','.join(courses)}"
+                # courses is a list of entry dicts; build a stable key from course names
+                names = [str(c.get('course') if isinstance(c, dict) else c or '') for c in courses]
+                key = f"{start_dt.isoformat()}|{','.join(names)}"
                 if key in processed:
                     continue
                 check_time = start_dt - timedelta(minutes=5)

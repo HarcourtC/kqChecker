@@ -61,20 +61,166 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                     return False
 
                 if courses:
-                    matched = extract_course_records(resp_json, courses)
+                    # normalize courses which may be list of strings or list of structured entries
+                    course_names: List[str] = []
+                    scheduled_entries: List[Dict[str, Any]] = []
+                    if isinstance(courses, list):
+                        for c in courses:
+                            if isinstance(c, dict):
+                                cn = c.get('course')
+                                if cn:
+                                    course_names.append(str(cn))
+                                # capture scheduled entry for notification context
+                                scheduled_entries.append({
+                                    'course': c.get('course'),
+                                    'room': c.get('room'),
+                                    'raw': c.get('raw'),
+                                })
+                            elif isinstance(c, str):
+                                course_names.append(c)
+                                scheduled_entries.append({'course': c, 'room': None, 'raw': None})
+                    elif isinstance(courses, str):
+                        course_names = [courses]
+                        scheduled_entries = [{'course': courses, 'room': None, 'raw': None}]
+                    else:
+                        # fallback
+                        try:
+                            course_names = [str(courses)]
+                        except Exception:
+                            course_names = []
+
+                    matched = extract_course_records(resp_json, course_names)
                     if not matched:
-                            logging.info("no matching attendance records found for courses=%s on %s", courses, date_str)
-                            # send notification if configured
+                            logging.info("no direct name-based attendance records found for courses=%s on %s", courses, date_str)
+                            # time-based fallback: build a minimal weekly mapping for this event time
+                            try:
+                                # time-based matching expects weekly mapping to course name list
+                                weekly_single = {event_time.strftime("%Y-%m-%d %H:%M:%S"): course_names}
+                                # use -20/+5 minute window as tested previously
+                                time_matches = match_records_by_time(resp_json, weekly_single, date_prefix=date_str,
+                                                                     before_minutes=20, after_minutes=5,
+                                                                     time_fields=("operdate", "watertime", "intime"))
+                                total_candidates = sum(len(v) for v in time_matches.values())
+                                if total_candidates:
+                                    logging.info("time-based matching found %d candidate attendance record(s) for courses=%s on %s", total_candidates, course_names, date_str)
+                                    # attempt to verify by room/location: only accept time-match if record's room matches scheduled room
+                                    def _extract_room_from_record(r):
+                                        try:
+                                            # possible shapes: top-level roomBean.roomnum or nested classWaterBean.roomBean.roomnum
+                                            room = None
+                                            if isinstance(r.get("roomBean"), dict):
+                                                room = r.get("roomBean", {}).get("roomnum")
+                                            if not room:
+                                                cw = r.get("classWaterBean") or {}
+                                                rb = cw.get("roomBean") or {}
+                                                if isinstance(rb, dict):
+                                                    room = rb.get("roomnum")
+                                            # sometimes room may be a simple string field
+                                            if not room:
+                                                room = r.get("room") or r.get("roomnum")
+                                            # device identifiers that map to room (eqno/eqname/rbh)
+                                            if not room:
+                                                # eqno often looks like '教2楼-西403' per API
+                                                eqno = r.get("eqno") or r.get("eqName") or r.get("eqname")
+                                                if isinstance(eqno, str) and eqno:
+                                                    return eqno.strip()
+                                                # rbh/bh may be numeric device ids
+                                                rbh = r.get("rbh") or r.get("bh")
+                                                if rbh:
+                                                    return str(rbh)
+                                            if isinstance(room, str):
+                                                return room.strip()
+                                        except Exception:
+                                            pass
+                                        return None
+
+                                    import re
+
+                                    def _norm(s):
+                                        if not s:
+                                            return ""
+                                        # keep CJK unified ideographs and ASCII letters/digits
+                                        parts = re.findall(r"[\u4e00-\u9fff0-9A-Za-z]+", str(s))
+                                        return "".join(parts).lower()
+
+                                    matched_by_room = False
+                                    # weekly_single maps the datetime key to course_names order
+                                    for k, recs in time_matches.items():
+                                        # find index(es) of the course_name(s) for this key
+                                        scheduled_course_names = weekly_single.get(k, [])
+                                        for idx, course_name in enumerate(scheduled_course_names):
+                                            scheduled_room = None
+                                            try:
+                                                scheduled_room = scheduled_entries[idx].get('room') if idx < len(scheduled_entries) else None
+                                            except Exception:
+                                                scheduled_room = None
+                                            for r in recs:
+                                                rec_room = None
+                                                try:
+                                                    rec_room = _extract_room_from_record(r)
+                                                    snippet = {
+                                                        "operdate": r.get("operdate") or r.get("watertime") or r.get("intime"),
+                                                        "teacher": r.get("teachNameList"),
+                                                        "subject": (r.get("subjectBean") or {}).get("sName") if isinstance(r.get("subjectBean"), dict) else None,
+                                                        "rec_room": rec_room,
+                                                        "sched_room": scheduled_room,
+                                                    }
+                                                    logging.debug("time-match candidate for %s: %s", k, snippet)
+                                                except Exception:
+                                                    logging.debug("error while logging time-match candidate", exc_info=True)
+                                                # compare normalized room strings (if both present)
+                                                if scheduled_room and rec_room:
+                                                    if _norm(scheduled_room) in _norm(rec_room) or _norm(rec_room) in _norm(scheduled_room):
+                                                        logging.info("time+room match accepted for course=%s on %s (rec_room=%s sched_room=%s)", course_name, date_str, rec_room, scheduled_room)
+                                                        matched_by_room = True
+                                                        break
+                                            if matched_by_room:
+                                                break
+                                        if matched_by_room:
+                                            break
+                                    if matched_by_room:
+                                        # accept as matched (time + room)
+                                        return True
+                                    else:
+                                        logging.info("time-based candidates found but none matched by room for courses=%s on %s", course_names, date_str)
+                                        # prepare structured candidate summary for logs to aid debugging
+                                        try:
+                                            cand_list = []
+                                            for k2, recs2 in time_matches.items():
+                                                for r2 in recs2:
+                                                    cand = {
+                                                        "when": r2.get("operdate") or r2.get("watertime") or r2.get("intime"),
+                                                        "eqno": r2.get("eqno"),
+                                                        "rbh": r2.get("rbh") or r2.get("bh"),
+                                                        "cardId": r2.get("cardId") or r2.get("cardid"),
+                                                        "watertime": r2.get("watertime"),
+                                                        "intime": r2.get("intime"),
+                                                        "subject": (r2.get("subjectBean") or {}).get("sName") if isinstance(r2.get("subjectBean"), dict) else None,
+                                                        "rec_room": _extract_room_from_record(r2),
+                                                        "keys": list(r2.keys())[:20],
+                                                    }
+                                                    cand_list.append(cand)
+                                            # log as JSON (ensure_ascii False for readable CJK in logs)
+                                            logging.info("time-match candidates detail: %s", json.dumps(cand_list, ensure_ascii=False))
+                                        except Exception:
+                                            logging.debug("failed to serialize time-match candidates for logging", exc_info=True)
+                                else:
+                                    logging.info("no time-based candidates found either for courses=%s on %s", course_names, date_str)
+                            except Exception:
+                                logging.exception("time-based fallback matching failed")
+
+                            # if we reach here, neither name-based nor time-based matching found records -> send notification
                             try:
                                 cfg = load_config()
-                                subj = f"Attendance missing for {', '.join(courses)} on {date_str}"
-                                body = (
-                                    f"Attendance check for courses {courses} on {date_str} returned no direct matches.\n"
-                                    "Consider enabling time-based matching or checking API response format.\n\n"
-                                    "This is an automated message from kqChecker."
-                                )
-                                # send asynchronously so scheduler isn't blocked
-                                send_miss_email_async(cfg, subj, body)
+                                # build a small candidates summary (empty here)
+                                context = {
+                                    "courses": course_names,
+                                    "date": date_str,
+                                    # include scheduled entries (course + room) to display in the notification
+                                    "candidates": scheduled_entries,
+                                }
+                                # send asynchronously so scheduler isn't blocked; subject/body will be rendered from config templates
+                                send_miss_email_async(cfg, subject=None, body=None, context=context)
                             except Exception:
                                 logging.exception("failed to send miss-notification email")
                             return False
