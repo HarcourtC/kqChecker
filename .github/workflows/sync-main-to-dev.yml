@@ -1,0 +1,46 @@
+name: Sync main → dev
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create or reuse PR from main -> dev
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const base = 'dev'
+            const head = 'main'
+
+            // Check for existing open PR from main -> dev
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${head}`,
+              base,
+              state: 'open'
+            })
+
+            if (prs.length) {
+              core.info(`Open PR already exists: ${prs[0].html_url}`)
+              return
+            }
+
+            // Create a PR to merge main into dev
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Sync main → dev (${new Date().toISOString().slice(0,10)})`,
+              head,
+              base,
+              body: 'Automated PR created by workflow to sync changes from main to dev.'
+            })
+
+            core.info(`Created PR: ${pr.data.html_url}`)
