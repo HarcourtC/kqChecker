@@ -14,6 +14,13 @@ try:
     import requests
 except Exception:  # pragma: no cover - optional runtime dependency
     requests = None
+from pathlib import Path
+import time
+
+try:
+    import requests
+except Exception:  # pragma: no cover - optional runtime dependency
+    requests = None
 
 
 def extract_rows(api_json: Any) -> List[Dict[str, Any]]:
