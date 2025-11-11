@@ -1,8 +1,0 @@
-{
-  "api1": "https://your.host/api/getSchedule",
-  "api2": "http://bkkq.xjtu.edu.cn/attendance-student/waterList/page",
-  "headers": {
-    "synjones-auth": "bearer YOUR_TOKEN",
-    "User-Agent": "kaoqing-checker/1.0"
-  }
-}
