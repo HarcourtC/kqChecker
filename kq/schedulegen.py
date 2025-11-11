@@ -7,6 +7,13 @@ from typing import Dict, List, Any, Optional
 import re
 import json
 from datetime import datetime, date, timedelta
+from pathlib import Path
+import time
+
+try:
+    import requests
+except Exception:  # pragma: no cover - optional runtime dependency
+    requests = None
 
 
 def extract_rows(api_json: Any) -> List[Dict[str, Any]]:
@@ -134,3 +141,65 @@ def save_weekly(path, calendar_map):
     tmp = p.with_name(p.name + '.tmp')
     tmp.write_text(json.dumps(calendar_map, ensure_ascii=False, indent=2), encoding='utf-8')
     p.replace(tmp)
+
+
+def fetch_from_api1(payload: Dict[str, Any], timeout: int = 10, retries: int = 2, periods_path: Optional[str] = None, use_week_of_today: bool = True) -> Dict[str, List[str]]:
+    """Post payload to api1 (from config.json), parse response and return calendar_map.
+
+    - payload: dict to POST to api1
+    - periods_path: optional path to periods.json; if None, will look for ../periods.json
+    - returns calendar mapping (same shape as build_weekly_calendar output)
+    """
+    # local import to avoid circular imports at package import time
+    try:
+        from .config import load_config
+    except Exception:
+        # fallback to reading sibling config.json
+        def load_config():
+            p = Path(__file__).parent.parent / 'config.json'
+            try:
+                return json.loads(p.read_text(encoding='utf-8'))
+            except Exception:
+                return {}
+
+    cfg = load_config()
+    url = cfg.get('api1')
+    headers = cfg.get('headers', {}) or {}
+
+    if not url:
+        raise RuntimeError('api1 not configured in config.json')
+
+    if requests is None:
+        raise RuntimeError('requests library not available; install requests')
+
+    session = requests.Session()
+    last_exc = None
+    resp_json = None
+    for attempt in range(retries + 1):
+        try:
+            resp = session.post(url, json=payload, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            resp_json = resp.json()
+            break
+        except Exception as e:
+            last_exc = e
+            time.sleep(1)
+
+    if resp_json is None:
+        raise last_exc or RuntimeError('failed to fetch from api1')
+
+    rows = extract_rows(resp_json)
+
+    # load periods.json
+    if periods_path:
+        ppath = Path(periods_path)
+    else:
+        ppath = Path(__file__).parent.parent / 'periods.json'
+    try:
+        periods_json = json.loads(ppath.read_text(encoding='utf-8'))
+    except Exception:
+        periods_json = {}
+
+    period_map = build_period_map(periods_json)
+    cal = build_weekly_calendar(rows, period_map, use_week_of_today=use_week_of_today)
+    return cal

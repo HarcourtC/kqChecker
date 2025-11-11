@@ -69,7 +69,6 @@ def main():
     # Default: try api1 from config.json using POST with payload {termNo, week}
         cfg = load_config()
         url = cfg.get("api1")
-        headers = cfg.get("headers") or {}
         if not url:
             print("api1 not configured in config.json; use --sample for testing")
             return 2
@@ -80,26 +79,12 @@ def main():
         term_no = getattr(args, 'termNo', None) or (api1_payload_cfg.get('termNo') if isinstance(api1_payload_cfg, dict) else None) or 606
         week_no = getattr(args, 'week', None) or (api1_payload_cfg.get('week') if isinstance(api1_payload_cfg, dict) else None) or 10
 
-        # normalize headers to strings
-        headers = {k: (v if isinstance(v, str) else json.dumps(v)) for k, v in headers.items()}
-
-        import requests
         payload = {"termNo": int(term_no), "week": int(week_no)}
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=15)
-            resp.raise_for_status()
-            data = resp.json()
+            sched = sg.fetch_from_api1(payload)
         except Exception as e:
-            print("Failed to POST to api1:", e)
+            print("Failed to fetch from api1:", e)
             return 3
-
-        rows = sg.extract_rows(data)
-        periods = {}
-        periods_path = ROOT / 'periods.json'
-        if periods_path.exists():
-            periods = json.loads(periods_path.read_text(encoding='utf-8'))
-        period_map = sg.build_period_map(periods)
-        sched = sg.build_weekly_calendar(rows, period_map)
 
     out_text = json.dumps(sched, ensure_ascii=False, indent=2)
     if args.dry_run:
