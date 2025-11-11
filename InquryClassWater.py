@@ -58,14 +58,7 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
     if extra_headers:
         headers.update(extra_headers)
 
-    # if environment token present, prefer it (already handled in post_api2 but ensure present)
-    import os
-    env_token = os.environ.get("KQ_TOKEN") or os.environ.get("SYNJONES_AUTH")
-    if env_token:
-        if env_token.lower().startswith("bearer "):
-            headers["synjones-auth"] = env_token
-        else:
-            headers["synjones-auth"] = f"bearer {env_token}"
+    # headers come from config.json and may be extended via extra_headers
 
     # call the lower-level sender using merged headers by injecting into config temporarily
     # to reuse post_api2 logic, pass headers via extra key in payload (backwards-compatible)
