@@ -12,6 +12,7 @@ except Exception:
 
 from .config import load_config
 from .matcher import match_records_by_time
+from .notifier import send_miss_email_async
 
 
 def post_attendance_query(event_time, courses=None, pageSize: int = 10, current: int = 1, calendarBh: str = "", timeout: int = 10, retries: int = 2, extra_headers: Optional[Dict[str, str]] = None) -> bool:
@@ -62,8 +63,21 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                 if courses:
                     matched = extract_course_records(resp_json, courses)
                     if not matched:
-                        logging.info("no matching attendance records found for courses=%s on %s", courses, date_str)
-                        return False
+                            logging.info("no matching attendance records found for courses=%s on %s", courses, date_str)
+                            # send notification if configured
+                            try:
+                                cfg = load_config()
+                                subj = f"Attendance missing for {', '.join(courses)} on {date_str}"
+                                body = (
+                                    f"Attendance check for courses {courses} on {date_str} returned no direct matches.\n"
+                                    "Consider enabling time-based matching or checking API response format.\n\n"
+                                    "This is an automated message from kqChecker."
+                                )
+                                # send asynchronously so scheduler isn't blocked
+                                send_miss_email_async(cfg, subj, body)
+                            except Exception:
+                                logging.exception("failed to send miss-notification email")
+                            return False
                     cleaned = clean_records(matched)
                     logging.info("found %d matching attendance record(s)", len(cleaned))
                     for rec in cleaned:
