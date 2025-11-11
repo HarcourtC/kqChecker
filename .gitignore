@@ -1,6 +1,6 @@
 geckodriver.exe
-*.json
+sample.json
+weekly_mapping.json
 attendance.log
-mindmap.md
-weekly_schedule.ics
-kq/__pycache__
+config.json
+weekly.json
