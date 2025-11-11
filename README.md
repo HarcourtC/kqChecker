@@ -1,6 +1,6 @@
 # kqChecker
 
-轻量的考勤检查工具，用于从教务/考勤接口抓取课程周表、查询打卡（考勤）记录，并在预期上课时间前后检测是否有对应的打卡记录；当检测不到时通过邮件通知。文档以中文为主，示例命令面向 Windows PowerShell（项目在 `ykt` conda 环境下测试）。
+轻量的考勤检查工具，用于从教务/考勤接口抓取课程周表、查询打卡（考勤）记录，并在预期上课时间前后检测是否有对应的打卡记录；当检测不到时通过邮件通知。文档以中文为主，示例命令面向 Windows PowerShell。
 
 ## 目录
 - 简介
@@ -27,24 +27,63 @@ kqChecker 将三部分功能组合起来：
 - `icsgen.py`：将 weekly.json / periods.json 生成 ICS 日历文件。
 
 ## 快速开始
-先激活或创建 conda 环境（项目使用 `ykt` 环境测试，Python 3.13）：
-
-```powershell
-# 使用你本地的 conda 路径和环境名称，示例：
-D:/ProgramData/miniconda3/Scripts/conda.exe run -p C:\Users\Harco\.conda\envs\ykt --no-capture-output cmd
-```
+先确保已安装系统级 Python：推荐 Python 3.13（已在 3.13.4 上测试）。如果你没有编程背景，请按下述“傻瓜式安装”部分一步步操作，整个流程不要求你写代码。
 
 在项目根下运行（示例）：
 
 ```powershell
 # 一次性（one-shot）运行：处理将要在接下来 5 分钟内开始的事件
-D:/ProgramData/miniconda3/Scripts/conda.exe run -p C:\Users\Harco\.conda\envs\ykt --no-capture-output python main.py --once --schedule weekly.json
+python main.py --once --schedule weekly.json
 
 # 测试模式（跳过网络调用）
-D:/ProgramData/miniconda3/Scripts/conda.exe run -p C:\Users\Harco\.conda\envs\ykt --no-capture-output python main.py --once --dry-run --schedule weekly_test.json
+python main.py --once --dry-run --schedule weekly_test.json
 ```
 
-注意：上面的 `conda.exe run -p ... python` 命令是基于当前工作环境路径，请根据你的机器调整为合适的 conda/环境路径或直接在激活环境后运行 `python main.py ...`。
+注意：如果你的系统上同时安装了多个 Python 版本，请用 `python3` 或使用安装目录下的 `python.exe`（例如 `C:\Python\python.exe`）替代 `python`。
+
+## 傻瓜式安装（Windows，极简版 — 仅需安装 Python 与两个库）
+
+如果你不想使用虚拟环境，使用最简单的方式：只需在系统上安装 Python，并通过 pip 安装两个依赖。适合对电脑有基本操作能力的用户。
+
+推荐 Python 版本：Python 3.13（在 3.13.4 上已测试）。如果未安装，请从 https://www.python.org/downloads/ 下载并安装适用于 Windows 的安装包，并勾选“Add Python to PATH”。
+
+安装依赖（只需两步）：
+
+```powershell
+# 安装 requests 和 python-dateutil
+python -m pip install --upgrade pip
+python -m pip install requests python-dateutil
+# 或使用 requirements.txt
+# python -m pip install -r requirements.txt
+```
+
+运行程序（示例）：
+
+```powershell
+cd E:\Program\kaoqing
+python .\main.py --once --dry-run --schedule weekly_test.json
+```
+
+一键运行（可选）：把下面内容保存为 `run_kq.bat`，双击即可：
+
+```text
+@echo off
+REM 假定 run_kq.bat 与 main.py 在同一目录
+set SCRIPT_DIR=%~dp0
+"%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "cd '%SCRIPT_DIR%'; python main.py %*"
+pause
+```
+
+把程序设置为开机自启（Task Scheduler）：在“操作”里填写 `Program/script` 为 `python`，`Arguments` 为 `E:\Program\kaoqing\main.py`，Start in 填 `E:\Program\kaoqing`。若你的系统中 `python` 未在 PATH，请把 Program/script 指向完整的 python.exe 路径（例如 `C:\Python\python.exe`）。
+
+配置与第一次运行：
+1. 复制 `config_example.json` 为 `config.json` 并填写必要字段（API、headers、smtp 等）。
+2. 运行上面的 dry-run 命令以验证（不会发邮件）。
+
+常见问题与排查
+- 若邮件未发送，检查 `attendance.log` 中的 SMTP 错误，并确认 `config.json.smtp` 的用户名/密码/端口是否正确（163/465、SSL 与 587 STARTTLS 的差别）。
+- 若未检测到打卡记录，先运行 `--dry-run` 并检查 `attendance.log` 中 time-match 的候选详情（日志中会记录结构化候选用于排查）。
+
 
 ## 配置（`config.json`）
 配置文件包含 API 地址、请求头、以及 SMTP 信息。重要字段：
