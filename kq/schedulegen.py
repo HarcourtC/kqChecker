@@ -91,12 +91,14 @@ def parse_jt(jt_str: Optional[str]):
         return None, None
 
 
-def build_weekly_calendar(rows: List[Dict[str, Any]], period_map: Dict[int, Dict[str, str]], use_week_of_today: bool = True) -> Dict[str, List[str]]:
-    """Convert rows into a mapping YYYY-MM-DD HH:MM:SS -> [course names].
+def build_weekly_calendar(rows: List[Dict[str, Any]], period_map: Dict[int, Dict[str, str]], use_week_of_today: bool = True) -> Dict[str, List[Dict[str, Any]]]:
+    """Convert rows into a mapping YYYY-MM-DD HH:MM:SS -> [entry objects].
+
+    Each entry object has keys: 'course', 'room', 'raw' (the original row dict).
 
     If use_week_of_today is True, dates are based on the current week (Monday start).
     """
-    cal: Dict[str, List[str]] = {}
+    cal: Dict[str, List[Dict[str, Any]]] = {}
     if use_week_of_today:
         today = datetime.today().date()
         week_start = today - timedelta(days=today.weekday())
@@ -125,6 +127,24 @@ def build_weekly_calendar(rows: List[Dict[str, Any]], period_map: Dict[int, Dict
         key_time = start_time if start_time else '00:00:00'
 
         course = r.get('subjectSName') or r.get('subjectSSimple') or r.get('subjectSCode') or ''
+        # try to extract a room/location from common fields returned by different APIs
+        room = None
+        for room_key in ('roomName', 'room', 'classroom', 'roomnum'):
+            rv = r.get(room_key)
+            if rv:
+                room = rv
+                break
+        # api1 uses buildName + roomRoomnum in responses
+        if not room:
+            bn = r.get('buildName')
+            rr = r.get('roomRoomnum')
+            if bn or rr:
+                room = f"{bn or ''} {rr or ''}".strip()
+        # nested roomBean patterns
+        if not room:
+            rb = r.get('roomBean') or (r.get('classWaterBean') or {}).get('roomBean')
+            if isinstance(rb, dict):
+                room = rb.get('roomnum') or rb.get('roomname') or rb.get('name')
         if not course:
             continue
 
@@ -135,11 +155,22 @@ def build_weekly_calendar(rows: List[Dict[str, Any]], period_map: Dict[int, Dict
 
         date_str = day.strftime('%Y-%m-%d')
         key = f"{date_str} {key_time}"
+        # produce a structured entry so downstream can access course and room separately
+        entry_obj = {
+            "course": course,
+            "room": room,
+            "raw": r,
+        }
+
+        # keep backward-compatible fallback: if existing values are strings, convert them
         if key in cal:
-            if course not in cal[key]:
-                cal[key].append(course)
+            # avoid duplicates by course+room
+            seen = {(e.get("course"), e.get("room")) if isinstance(e, dict) else (e, None) for e in cal[key]}
+            tup = (entry_obj.get("course"), entry_obj.get("room"))
+            if tup not in seen:
+                cal[key].append(entry_obj)
         else:
-            cal[key] = [course]
+            cal[key] = [entry_obj]
 
     return cal
 
@@ -154,7 +185,7 @@ def save_weekly(path, calendar_map):
     tmp.replace(p)
 
 
-def fetch_from_api1(payload: Dict[str, Any], timeout: int = 10, retries: int = 2, periods_path: Optional[str] = None, use_week_of_today: bool = True) -> Dict[str, List[str]]:
+def fetch_from_api1(payload: Dict[str, Any], timeout: int = 10, retries: int = 2, periods_path: Optional[str] = None, use_week_of_today: bool = True) -> Dict[str, List[Dict[str, Any]]]:
     """Post payload to api1 (from config.json), parse response and return calendar_map.
 
     - payload: dict to POST to api1

@@ -5,14 +5,14 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
-from typing import List, Tuple
+from typing import List, Tuple, Any, Dict
 
 ROOT = Path(__file__).parent.parent
 WEEKLY = ROOT / "weekly.json"
 PERIODS = ROOT / "periods.json"
 
 
-def load_weekly(path: Path = WEEKLY) -> List[Tuple[datetime, List[str]]]:
+def load_weekly(path: Path = WEEKLY) -> List[Tuple[datetime, List[Dict[str, Any]]]]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     events = []
     for k, v in raw.items():
@@ -21,7 +21,16 @@ def load_weekly(path: Path = WEEKLY) -> List[Tuple[datetime, List[str]]]:
         except Exception:
             continue
         if isinstance(v, list):
-            events.append((dt, v))
+            # normalize items to dict entries
+            entries: List[Dict[str, Any]] = []
+            for item in v:
+                if isinstance(item, dict) and 'course' in item:
+                    entries.append(item)
+                elif isinstance(item, str):
+                    entries.append({'course': item, 'room': None, 'raw': None})
+                else:
+                    entries.append({'course': str(item), 'room': None, 'raw': item})
+            events.append((dt, entries))
     events.sort(key=lambda x: x[0])
     return events
 
@@ -54,7 +63,7 @@ def format_dt(dt: datetime) -> str:
     return dt.strftime("%Y%m%dT%H%M%S")
 
 
-def make_ics(events: List[Tuple[datetime, List[str]]], periods: List[Tuple[str, str]], default_minutes: int = 60) -> str:
+def make_ics(events: List[Tuple[datetime, List[Dict[str, Any]]]], periods: List[Tuple[str, str]], default_minutes: int = 60) -> str:
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -65,7 +74,16 @@ def make_ics(events: List[Tuple[datetime, List[str]]], periods: List[Tuple[str, 
         if dtend is None:
             dtend = dtstart + timedelta(minutes=default_minutes)
         uid = f"{uuid.uuid4()}"
-        summary = ", ".join(courses)
+        # courses may be structured entries; build a readable summary
+        summary_parts = []
+        for c in courses:
+            if isinstance(c, dict):
+                cname = c.get('course') or ''
+                room = c.get('room')
+                summary_parts.append(f"{cname}{(' @' + room) if room else ''}".strip())
+            else:
+                summary_parts.append(str(c))
+        summary = ", ".join([p for p in summary_parts if p])
         lines.extend([
             "BEGIN:VEVENT",
             f"UID:{uid}",

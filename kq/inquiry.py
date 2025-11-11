@@ -61,19 +61,39 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                     return False
 
                 if courses:
-                    matched = extract_course_records(resp_json, courses)
+                    # normalize courses which may be list of strings or list of structured entries
+                    course_names: List[str] = []
+                    if isinstance(courses, list):
+                        for c in courses:
+                            if isinstance(c, dict):
+                                cn = c.get('course')
+                                if cn:
+                                    course_names.append(str(cn))
+                            elif isinstance(c, str):
+                                course_names.append(c)
+                    elif isinstance(courses, str):
+                        course_names = [courses]
+                    else:
+                        # fallback
+                        try:
+                            course_names = [str(courses)]
+                        except Exception:
+                            course_names = []
+
+                    matched = extract_course_records(resp_json, course_names)
                     if not matched:
                             logging.info("no direct name-based attendance records found for courses=%s on %s", courses, date_str)
                             # time-based fallback: build a minimal weekly mapping for this event time
                             try:
-                                weekly_single = {event_time.strftime("%Y-%m-%d %H:%M:%S"): courses}
+                                # time-based matching expects weekly mapping to course name list
+                                weekly_single = {event_time.strftime("%Y-%m-%d %H:%M:%S"): course_names}
                                 # use -20/+5 minute window as tested previously
                                 time_matches = match_records_by_time(resp_json, weekly_single, date_prefix=date_str,
                                                                      before_minutes=20, after_minutes=5,
                                                                      time_fields=("operdate", "watertime", "intime"))
                                 total_candidates = sum(len(v) for v in time_matches.values())
                                 if total_candidates:
-                                    logging.info("time-based matching found %d candidate attendance record(s) for courses=%s on %s", total_candidates, courses, date_str)
+                                    logging.info("time-based matching found %d candidate attendance record(s) for courses=%s on %s", total_candidates, course_names, date_str)
                                     # debug log some candidate details (sanitized)
                                     for k, recs in time_matches.items():
                                         for r in recs:
@@ -89,20 +109,21 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                                     # treat as success (time-based match) and do not send missing notification
                                     return True
                                 else:
-                                    logging.info("no time-based candidates found either for courses=%s on %s", courses, date_str)
+                                    logging.info("no time-based candidates found either for courses=%s on %s", course_names, date_str)
                             except Exception:
                                 logging.exception("time-based fallback matching failed")
 
                             # if we reach here, neither name-based nor time-based matching found records -> send notification
                             try:
                                 cfg = load_config()
-                                subj = f"Attendance missing for {', '.join(courses)} on {date_str}"
-                                body = (
-                                    f"Attendance check for courses {courses} on {date_str} returned no matches (name-based nor time-based).\n"
-                                    "This is an automated message from kqChecker."
-                                )
-                                # send asynchronously so scheduler isn't blocked
-                                send_miss_email_async(cfg, subj, body)
+                                # build a small candidates summary (empty here)
+                                context = {
+                                    "courses": course_names,
+                                    "date": date_str,
+                                    "candidates": [],
+                                }
+                                # send asynchronously so scheduler isn't blocked; subject/body will be rendered from config templates
+                                send_miss_email_async(cfg, subject=None, body=None, context=context)
                             except Exception:
                                 logging.exception("failed to send miss-notification email")
                             return False
