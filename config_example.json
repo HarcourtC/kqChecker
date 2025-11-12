@@ -1,8 +1,30 @@
-{
+﻿{
   "api1": "https://your.host/api/getSchedule",
   "api2": "http://bkkq.xjtu.edu.cn/attendance-student/waterList/page",
   "headers": {
     "synjones-auth": "bearer YOUR_TOKEN",
     "User-Agent": "kaoqing-checker/1.0"
+  },
+
+  "notifications": {
+    "on_startup": true,
+    "startup_subject": "kqChecker 已启动: {host} {date} {time}",
+    "startup_body": "kqChecker scheduler 在 {host} 于 {date} {time} 启动。\n这是自动通知。",
+
+    "on_match": false,
+    "match_subject": "检测到考勤：{courses} ({date})",
+    "match_body": "检测到以下匹配记录：\n{matches}",
+
+    "miss_subject": "Attendance missing for {courses} on {date}",
+    "miss_body": "Attendance check for courses {courses} on {date} returned no matches.\nCandidates:\n{candidates}\n\nThis is an automated message from kqChecker."
+  },
+
+  "smtp": {
+    "host": "smtp.example.com",
+    "port": 465,
+    "username": "your-smtp-user",
+    "password": "your-smtp-password",
+    "from": "noreply@example.com",
+    "to": ["you@example.com"]
   }
 }

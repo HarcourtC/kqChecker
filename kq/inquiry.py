@@ -209,9 +209,32 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                             except Exception:
                                 logging.exception("time-based fallback matching failed")
 
-                            # if we reach here, neither name-based nor time-based matching found records -> send notification
+                            # if we reach here, neither name-based nor time-based matching found records -> save debug info and send notification
                             try:
-                                cfg = load_config()
+                                cfg = load_config() or {}
+
+                                # save the POST response and payload for debugging if enabled in config
+                                try:
+                                    dbg = cfg.get("debug") or {}
+                                    if dbg.get("save_missing_response") and resp_json is not None:
+                                        dump_dir = Path(__file__).parent.parent / (dbg.get("dump_dir") or "debug_responses")
+                                        dump_dir.mkdir(parents=True, exist_ok=True)
+                                        ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+                                        # sanitize course names for filename
+                                        safe_courses = "-".join([str(c).replace(' ', '_') for c in course_names]) if course_names else "courses"
+                                        fname = f"missing_{date_str}_{safe_courses}_{ts}.json"
+                                        import re
+                                        fname = re.sub(r"[^0-9A-Za-z_\-\.\u4e00-\u9fff]", "", fname)
+                                        outp = dump_dir / fname
+                                        try:
+                                            with outp.open("w", encoding="utf-8") as fh:
+                                                json.dump({"payload": payload, "response": resp_json}, fh, ensure_ascii=False, indent=2)
+                                            logging.info("saved missing POST response to %s", outp)
+                                        except Exception:
+                                            logging.exception("failed to write missing POST response to %s", outp)
+                                except Exception:
+                                    logging.debug("error while attempting to save missing response for debugging", exc_info=True)
+
                                 # build a small candidates summary (empty here)
                                 context = {
                                     "courses": course_names,
@@ -219,6 +242,7 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                                     # include scheduled entries (course + room) to display in the notification
                                     "candidates": scheduled_entries,
                                 }
+
                                 # send asynchronously so scheduler isn't blocked; subject/body will be rendered from config templates
                                 send_miss_email_async(cfg, subject=None, body=None, context=context)
                             except Exception:
@@ -226,6 +250,61 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                             return False
                     cleaned = clean_records(matched)
                     logging.info("found %d matching attendance record(s)", len(cleaned))
+                    # Optionally send a notification when matches are detected (config-controlled)
+                    try:
+                        cfg = load_config() or {}
+                        notifs = cfg.get("notifications") or {}
+                        if notifs.get("on_match"):
+                            # prepare context for notification
+                            context = {
+                                "courses": course_names,
+                                "date": date_str,
+                                "matches": cleaned,
+                            }
+
+                            # allow optional templates in config: match_subject/match_body
+                            tpl_subj = notifs.get("match_subject")
+                            tpl_body = notifs.get("match_body")
+
+                            class _SafeDict(dict):
+                                def __missing__(self, key):
+                                    return ""
+
+                            sd = _SafeDict()
+                            sd.update(context)
+
+                            subj = None
+                            body = None
+                            try:
+                                if tpl_subj:
+                                    subj = tpl_subj.format_map(sd)
+                            except Exception:
+                                subj = None
+                            try:
+                                if tpl_body:
+                                    body = tpl_body.format_map(sd)
+                            except Exception:
+                                body = None
+
+                            if not subj:
+                                subj = f"Attendance records found for {', '.join(course_names)} on {date_str}"
+                            if not body:
+                                # basic body summarizing matches
+                                try:
+                                    mlines = []
+                                    for m in cleaned:
+                                        mlines.append(f"- {m.get('operdate')} | {m.get('course')} | {m.get('room')} | {m.get('teacher')}")
+                                    body = "Attendance records detected:\n" + "\n".join(mlines)
+                                except Exception:
+                                    body = "Attendance records were detected."
+
+                            try:
+                                send_miss_email_async(cfg, subject=subj, body=body, context=context)
+                                logging.info("match notification scheduled (on_match enabled)")
+                            except Exception:
+                                logging.exception("failed to schedule match notification")
+                    except Exception:
+                        logging.debug("error while attempting to send match notification", exc_info=True)
                     for rec in cleaned:
                         logging.debug("cleaned record: %s", rec)
                     return True

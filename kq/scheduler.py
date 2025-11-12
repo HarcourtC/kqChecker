@@ -1,15 +1,19 @@
 """Scheduler module: load weekly schedule and run an always-on scheduler."""
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import threading
 import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time as dt_time
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple, Any, Dict
+from typing import List, Tuple, Any, Dict, Optional
 
 from .inquiry import post_attendance_query
+from .config import load_config
+from .notifier import send_miss_email_async
+import socket
 
 
 ROOT = Path(__file__).parent.parent
@@ -56,15 +60,40 @@ def load_schedule(path: Path = SCHEDULE_FILE) -> List[Tuple[datetime, List[Dict[
     return events
 
 
-def setup_logging(log_file: Path = Path(__file__).parent.parent / "attendance.log") -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
-    )
+def setup_logging(log_file: Optional[Path] = None) -> None:
+    # Ensure logs directory exists
+    logs_dir = ROOT / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = logs_dir / "attendance.log"
+    try:
+        rotating_handler = RotatingFileHandler(str(log_path), maxBytes=10 * 1024 * 1024, backupCount=20, encoding="utf-8")
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        rotating_handler.setFormatter(formatter)
+        rotating_handler.setLevel(logging.INFO)
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                rotating_handler,
+                logging.StreamHandler(),
+            ],
+        )
+    except Exception:
+        # Fallback to console-only if file handler cannot be created
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+    # Update root-level attendance.log marker for compatibility
+    try:
+        root_link = ROOT / "attendance.log"
+        root_link.write_text(f"Current log file: logs/{log_path.name}\n", encoding="utf-8")
+    except Exception:
+        logging.debug("could not write root attendance.log marker")
+
+
+POST_WINDOW_START = dt_time(7, 40)
+POST_WINDOW_END = dt_time(19, 40)
 
 
 def check_attendance(event_time, entries, dry_run: bool = False) -> None:
@@ -74,6 +103,23 @@ def check_attendance(event_time, entries, dry_run: bool = False) -> None:
     try:
         if dry_run:
             logging.info("dry-run enabled: skipping network call for %s", course_names)
+            return
+        # Only send notification at the 5-minute mark before class.
+        now = datetime.now()
+        minutes_before = (event_time - now).total_seconds() / 60.0
+        if not (0 < minutes_before <= 5):
+            logging.info("not the notify moment (%.1f minutes before); skipping for %s", minutes_before, course_names)
+            return
+
+        # Enforce posting window: only perform network POSTs between POST_WINDOW_START and POST_WINDOW_END
+        now_time = now.time()
+        if not (POST_WINDOW_START <= now_time <= POST_WINDOW_END):
+            logging.info(
+                "outside posting window (%s - %s): skipping network call for %s",
+                POST_WINDOW_START.isoformat(),
+                POST_WINDOW_END.isoformat(),
+                course_names,
+            )
             return
 
         found = post_attendance_query(event_time, courses=entries)
@@ -85,12 +131,15 @@ def check_attendance(event_time, entries, dry_run: bool = False) -> None:
         logging.exception("error querying attendance for %s", course_names)
 
 
-def scheduler_loop(poll_interval: int = 30) -> None:
+def scheduler_loop(poll_interval: int = 300) -> None:
     processed = set()
     logging.info("scheduler started, watching %s", SCHEDULE_FILE)
     last_weekly_refresh = None  # type: ignore
     while True:
         try:
+            # heartbeat tick to indicate scheduler is alive (helps when no events are due)
+            logging.info("scheduler tick: now=%s", datetime.now().isoformat())
+
             now = datetime.now()
             events = load_schedule()
             for start_dt, courses in events:
@@ -144,6 +193,62 @@ def scheduler_loop(poll_interval: int = 30) -> None:
 def main() -> None:
     setup_logging()
     logging.info("attendance scheduler starting up")
+    # load config and optionally send a startup notification
+    try:
+        cfg = load_config() or {}
+        notifs = cfg.get("notifications") or {}
+        if notifs.get("on_startup"):
+            now = datetime.now()
+            hostname = ""
+            try:
+                hostname = socket.gethostname()
+            except Exception:
+                hostname = "unknown"
+
+            # prepare context for formatting
+            context = {
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "host": hostname,
+            }
+
+            # allow optional templates in config: startup_subject/startup_body
+            tpl_subj = notifs.get("startup_subject")
+            tpl_body = notifs.get("startup_body")
+            # safe formatting fallback
+            class _SafeDict(dict):
+                def __missing__(self, key):
+                    return ""
+
+            sd = _SafeDict()
+            sd.update(context)
+
+            subj = None
+            body = None
+            try:
+                if tpl_subj:
+                    subj = tpl_subj.format_map(sd)
+            except Exception:
+                subj = None
+            try:
+                if tpl_body:
+                    body = tpl_body.format_map(sd)
+            except Exception:
+                body = None
+
+            if not subj:
+                subj = f"kqChecker started on {hostname} at {context['time']}"
+            if not body:
+                body = f"kqChecker scheduler started on {hostname} at {context['date']} {context['time']}.\nThis is an automated startup notification."
+
+            try:
+                # send asynchronously so startup isn't blocked
+                send_miss_email_async(cfg, subject=subj, body=body, context=context)
+                logging.info("startup notification scheduled (on_startup enabled)")
+            except Exception:
+                logging.exception("failed to schedule startup notification")
+    except Exception:
+        logging.debug("error while attempting to send startup notification", exc_info=True)
     t = threading.Thread(target=scheduler_loop, name="scheduler", daemon=True)
     t.start()
     try:
