@@ -10,9 +10,10 @@ import sys
 from pathlib import Path
 from typing import List, Tuple, Any, Dict, Optional
 
-from .inquiry import post_attendance_query
+from .inquiry import post_attendance_query, API400Error
 from .config import load_config
 from .notifier import send_miss_email_async
+from .error_handler import handle_api400
 import socket
 
 
@@ -122,11 +123,16 @@ def check_attendance(event_time, entries, dry_run: bool = False) -> None:
             )
             return
 
-        found = post_attendance_query(event_time, courses=entries)
-        if found:
-            logging.info("attendance records found for %s", course_names)
-        else:
-            logging.info("no attendance records for %s", course_names)
+        try:
+            found = post_attendance_query(event_time, courses=entries)
+            if found:
+                logging.info("attendance records found for %s", course_names)
+            else:
+                logging.info("no attendance records for %s", course_names)
+        except API400Error as e:
+            cfg = load_config() or {}
+            # delegate handling to centralized error handler which will send mail, save dumps, and exit
+            handle_api400(cfg, e)
     except Exception:
         logging.exception("error querying attendance for %s", course_names)
 

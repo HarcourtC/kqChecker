@@ -78,6 +78,19 @@ def main():
         print("requests not available in this Python environment. Install 'requests' and retry.")
         return 3
 
+    # monkeypatch notifier to avoid sending real emails during tests
+    try:
+        import kq.notifier as notifier
+
+        def _stub_send_miss_email_async(cfg, subject=None, body=None, context=None):
+            logging.info("[TEST MODE] suppressed send_miss_email_async call; subject=%s", subject)
+            return True
+
+        notifier.send_miss_email_async = _stub_send_miss_email_async
+        logging.debug("kq.notifier.send_miss_email_async monkeypatched to stub")
+    except Exception:
+        logging.debug("failed to monkeypatch notifier; continuing (be careful: real emails may be sent)", exc_info=True)
+
     # choose an event_time that exists in the sample date range
     event_time = datetime.now()
 

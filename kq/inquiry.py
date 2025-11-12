@@ -15,6 +15,18 @@ from .matcher import match_records_by_time
 from .notifier import send_miss_email_async
 
 
+class API400Error(Exception):
+    """Raised when api2 returns a structured 400-like payload and alerts are enabled.
+
+    Carries subject/body/context for downstream error handlers to send notifications.
+    """
+    def __init__(self, subject: str, body: str, context: Optional[Dict[str, Any]] = None):
+        super().__init__(subject)
+        self.subject = subject
+        self.body = body
+        self.context = context or {}
+
+
 def post_attendance_query(event_time, courses=None, pageSize: int = 10, current: int = 1, calendarBh: str = "", timeout: int = 10, retries: int = 2, extra_headers: Optional[Dict[str, str]] = None) -> bool:
     """Construct payload and POST to api2; returns True if matching records found, else False."""
     from datetime import datetime
@@ -56,6 +68,40 @@ def post_attendance_query(event_time, courses=None, pageSize: int = 10, current:
                 resp.raise_for_status()
                 try:
                     resp_json = resp.json()
+                    # If the API returned a 400-like structured response, optionally alert
+                    try:
+                        notifs_cfg = cfg.get('notifications') or {}
+                        if isinstance(resp_json, dict) and resp_json.get('code') == 400 and notifs_cfg.get('alert_on_400'):
+                            # build subject/body from templates if provided
+                            tpl_subj = notifs_cfg.get('alert_400_subject') or "api2 returned error 400 on {date}"
+                            tpl_body = notifs_cfg.get('alert_400_body') or (
+                                "api2 returned HTTP 400-like payload for request {payload} on {date}.\n\nResponse:\n{response}\n"
+                            )
+                            # safe format
+                            class _TmpSafeDict(dict):
+                                def __missing__(self, key):
+                                    return ""
+
+                            sd = _TmpSafeDict()
+                            sd.update({
+                                'date': date_str,
+                                'payload': json.dumps(payload, ensure_ascii=False),
+                                'response': json.dumps(resp_json, ensure_ascii=False),
+                            })
+                            try:
+                                subj = tpl_subj.format_map(sd)
+                            except Exception:
+                                subj = tpl_subj
+                            try:
+                                body = tpl_body.format_map(sd)
+                            except Exception:
+                                body = tpl_body
+
+                            # raise a specific exception that callers can catch and handle
+                            # (for example: send email synchronously and exit the program)
+                            raise API400Error(subj, body, context={'payload': payload, 'response': resp_json})
+                    except Exception:
+                        logging.debug('error while checking/issuing alert_on_400', exc_info=True)
                 except ValueError:
                     logging.warning("api2 returned non-json response; returning False")
                     return False

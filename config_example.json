@@ -17,6 +17,10 @@
 
     "miss_subject": "Attendance missing for {courses} on {date}",
     "miss_body": "Attendance check for courses {courses} on {date} returned no matches.\nCandidates:\n{candidates}\n\nThis is an automated message from kqChecker."
+    ,
+    "alert_on_400": false,
+    "alert_400_subject": "api2 returned error 400 on {date}",
+    "alert_400_body": "api2 returned an error for request {payload} on {date}.\n\nResponse:\n{response}\n"
   },
 
   "smtp": {
