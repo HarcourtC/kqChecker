@@ -1,11 +1,12 @@
 """ICS generation utilities."""
+
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-import uuid
-from typing import List, Tuple, Any, Dict
+from typing import Any, Dict, List, Tuple
 
 ROOT = Path(__file__).parent.parent
 WEEKLY = ROOT / "weekly.json"
@@ -24,12 +25,12 @@ def load_weekly(path: Path = WEEKLY) -> List[Tuple[datetime, List[Dict[str, Any]
             # normalize items to dict entries
             entries: List[Dict[str, Any]] = []
             for item in v:
-                if isinstance(item, dict) and 'course' in item:
+                if isinstance(item, dict) and "course" in item:
                     entries.append(item)
                 elif isinstance(item, str):
-                    entries.append({'course': item, 'room': None, 'raw': None})
+                    entries.append({"course": item, "room": None, "raw": None})
                 else:
-                    entries.append({'course': str(item), 'room': None, 'raw': item})
+                    entries.append({"course": str(item), "room": None, "raw": item})
             events.append((dt, entries))
     events.sort(key=lambda x: x[0])
     return events
@@ -50,11 +51,15 @@ def load_periods(path: Path = PERIODS) -> List[Tuple[str, str]]:
     return periods
 
 
-def find_period_end(periods: List[Tuple[str, str]], event_dt: datetime) -> datetime | None:
+def find_period_end(
+    periods: List[Tuple[str, str]], event_dt: datetime
+) -> datetime | None:
     tstr = event_dt.strftime("%H:%M:%S")
     for st, et in periods:
         if st == tstr:
-            dtend = datetime.combine(event_dt.date(), datetime.strptime(et, "%H:%M:%S").time())
+            dtend = datetime.combine(
+                event_dt.date(), datetime.strptime(et, "%H:%M:%S").time()
+            )
             return dtend
     return None
 
@@ -63,7 +68,11 @@ def format_dt(dt: datetime) -> str:
     return dt.strftime("%Y%m%dT%H%M%S")
 
 
-def make_ics(events: List[Tuple[datetime, List[Dict[str, Any]]]], periods: List[Tuple[str, str]], default_minutes: int = 60) -> str:
+def make_ics(
+    events: List[Tuple[datetime, List[Dict[str, Any]]]],
+    periods: List[Tuple[str, str]],
+    default_minutes: int = 60,
+) -> str:
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -78,21 +87,23 @@ def make_ics(events: List[Tuple[datetime, List[Dict[str, Any]]]], periods: List[
         summary_parts = []
         for c in courses:
             if isinstance(c, dict):
-                cname = c.get('course') or ''
-                room = c.get('room')
+                cname = c.get("course") or ""
+                room = c.get("room")
                 summary_parts.append(f"{cname}{(' @' + room) if room else ''}".strip())
             else:
                 summary_parts.append(str(c))
         summary = ", ".join([p for p in summary_parts if p])
-        lines.extend([
-            "BEGIN:VEVENT",
-            f"UID:{uid}",
-            f"DTSTAMP:{format_dt(datetime.now())}",
-            f"DTSTART:{format_dt(dtstart)}",
-            f"DTEND:{format_dt(dtend)}",
-            f"SUMMARY:{summary}",
-            "END:VEVENT",
-        ])
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:{uid}",
+                f"DTSTAMP:{format_dt(datetime.now())}",
+                f"DTSTART:{format_dt(dtstart)}",
+                f"DTEND:{format_dt(dtend)}",
+                f"SUMMARY:{summary}",
+                "END:VEVENT",
+            ]
+        )
     lines.append("END:VCALENDAR")
     return "\r\n".join(lines) + "\r\n"
 
@@ -104,4 +115,3 @@ def generate(output: str = "weekly_schedule.ics", default_minutes: int = 60) -> 
     out = Path(output)
     out.write_text(ics, encoding="utf-8")
     return str(out.resolve())
-

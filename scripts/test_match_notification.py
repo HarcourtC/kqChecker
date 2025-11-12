@@ -6,10 +6,11 @@ Usage:
 
 By default this script only prints the rendered subject/body so it's safe to run locally.
 """
-from pathlib import Path
-import sys
+
 import json
+import sys
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -40,8 +41,18 @@ def render_match(cfg):
         "courses": ["高等数学(一)", "线性代数"],
         "date": datetime.now().strftime("%Y-%m-%d"),
         "matches": [
-            {"operdate": "2025-11-12 08:55:00", "course": "高等数学(一)", "room": "教2楼-西403", "teacher": "张老师"},
-            {"operdate": "2025-11-12 09:05:00", "course": "线性代数", "room": "教1楼-东201", "teacher": "李老师"},
+            {
+                "operdate": "2025-11-12 08:55:00",
+                "course": "高等数学(一)",
+                "room": "教2楼-西403",
+                "teacher": "张老师",
+            },
+            {
+                "operdate": "2025-11-12 09:05:00",
+                "course": "线性代数",
+                "room": "教1楼-东201",
+                "teacher": "李老师",
+            },
         ],
     }
 
@@ -63,18 +74,27 @@ def render_match(cfg):
         if tpl_body:
             # if template expects {matches} as string, provide a simple join
             if isinstance(ctx.get("matches"), list):
-                sd["matches"] = "\n".join([f"- {m.get('operdate')} | {m.get('course')} | {m.get('room')} | {m.get('teacher')}" for m in ctx['matches']])
+                sd["matches"] = "\n".join(
+                    [
+                        f"- {m.get('operdate')} | {m.get('course')} | {m.get('room')} | {m.get('teacher')}"
+                        for m in ctx["matches"]
+                    ]
+                )
             body = tpl_body.format_map(sd)
     except Exception:
         body = None
 
     if not subj:
-        subj = f"Attendance records found for {', '.join(ctx['courses'])} on {ctx['date']}"
+        subj = (
+            f"Attendance records found for {', '.join(ctx['courses'])} on {ctx['date']}"
+        )
     if not body:
         try:
             mlines = []
-            for m in ctx['matches']:
-                mlines.append(f"- {m.get('operdate')} | {m.get('course')} | {m.get('room')} | {m.get('teacher')}")
+            for m in ctx["matches"]:
+                mlines.append(
+                    f"- {m.get('operdate')} | {m.get('course')} | {m.get('room')} | {m.get('teacher')}"
+                )
             body = "Attendance records detected:\n" + "\n".join(mlines)
         except Exception:
             body = "Attendance records were detected."
@@ -82,7 +102,7 @@ def render_match(cfg):
     return subj, body, ctx
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cfg = load_cfg()
     subj, body, ctx = render_match(cfg)
     print("SUBJECT:")
@@ -93,4 +113,4 @@ if __name__ == '__main__':
     if "--send" in sys.argv:
         print("\nScheduling send (async) using SMTP config in config.json...")
         ok = send_miss_email_async(cfg, subject=subj, body=body, context=ctx)
-        print("Scheduled:" , ok)
+        print("Scheduled:", ok)

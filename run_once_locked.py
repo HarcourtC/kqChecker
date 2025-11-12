@@ -4,18 +4,20 @@ Wrapper to run `main.py` with a filesystem lock to prevent overlapping runs.
 Use this script as the action for Task Scheduler or other schedulers.
 """
 import os
-import sys
 import subprocess
+import sys
 import time
 
 LOCKNAME = "run_once_locked.lock"
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCKPATH = os.path.join(HERE, LOCKNAME)
 
+
 def acquire_lock():
-    if os.name == 'nt':
+    if os.name == "nt":
         import msvcrt
-        lock_file = open(LOCKPATH, 'w')
+
+        lock_file = open(LOCKPATH, "w")
         try:
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
@@ -24,7 +26,8 @@ def acquire_lock():
         return lock_file
     else:
         import fcntl
-        lock_file = open(LOCKPATH, 'w')
+
+        lock_file = open(LOCKPATH, "w")
         try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError:
@@ -37,8 +40,9 @@ def release_lock(lock_file):
     try:
         if lock_file is None:
             return
-        if os.name == 'nt':
+        if os.name == "nt":
             import msvcrt
+
             try:
                 lock_file.seek(0)
                 msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
@@ -46,6 +50,7 @@ def release_lock(lock_file):
                 pass
         else:
             import fcntl
+
             try:
                 fcntl.flock(lock_file, fcntl.LOCK_UN)
             except Exception:
@@ -69,7 +74,7 @@ def main():
 
     try:
         python = sys.executable
-        script = os.path.join(HERE, 'main.py')
+        script = os.path.join(HERE, "main.py")
         if not os.path.exists(script):
             print(f"Script not found: {script}")
             return 2
@@ -85,5 +90,5 @@ def main():
         release_lock(lock_file)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

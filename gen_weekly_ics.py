@@ -8,13 +8,14 @@ ICS text, writes it to a temporary file and then replaces the target file
 atomically (os.replace). If --backup is given and the target exists, the old
 file is copied to <output>.bak before replacement.
 """
-from pathlib import Path
+
 import argparse
 import os
 import shutil
 from datetime import datetime
+from pathlib import Path
 
-from kq.icsgen import load_weekly, load_periods, make_ics
+from kq.icsgen import load_periods, load_weekly, make_ics
 
 
 def atomic_write(output_path: Path, text: str) -> None:
@@ -27,9 +28,20 @@ def atomic_write(output_path: Path, text: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate weekly ICS atomically")
-    parser.add_argument("--output", "-o", default="weekly_schedule.ics", help="Output ICS path")
-    parser.add_argument("--backup", action="store_true", help="Keep a .bak of the previous ICS if it exists")
-    parser.add_argument("--minutes", type=int, default=60, help="Default duration in minutes when period end not found")
+    parser.add_argument(
+        "--output", "-o", default="weekly_schedule.ics", help="Output ICS path"
+    )
+    parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Keep a .bak of the previous ICS if it exists",
+    )
+    parser.add_argument(
+        "--minutes",
+        type=int,
+        default=60,
+        help="Default duration in minutes when period end not found",
+    )
     args = parser.parse_args()
 
     out = Path(args.output)

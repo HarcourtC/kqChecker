@@ -1,11 +1,17 @@
 """Time-based matching helpers for attendance records."""
+
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 
-def match_records_by_time(response_json: Dict[str, Any], weekly: Dict[str, List[str]], date_prefix: Optional[str] = None,
-                          before_minutes: int = 20, after_minutes: int = 5,
-                          time_fields: Sequence[str] = ("watertime", "intime")) -> Dict[str, List[Dict[str, Any]]]:
+def match_records_by_time(
+    response_json: Dict[str, Any],
+    weekly: Dict[str, List[str]],
+    date_prefix: Optional[str] = None,
+    before_minutes: int = 20,
+    after_minutes: int = 5,
+    time_fields: Sequence[str] = ("watertime", "intime"),
+) -> Dict[str, List[Dict[str, Any]]]:
     """Match attendance records to weekly schedule by time window.
 
     Args:

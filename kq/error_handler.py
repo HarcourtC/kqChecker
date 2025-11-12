@@ -4,10 +4,11 @@ This module provides handle_api400(cfg, api400_error) which will attempt to
 send a synchronous alert email, save debug payload/response to disk if present,
 log outcomes, and exit the process with a non-zero code.
 """
-from pathlib import Path
+
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Any, Dict
 
 from .notifier import send_miss_email
@@ -15,12 +16,15 @@ from .notifier import send_miss_email
 
 def _save_debug_dump(cfg: Dict[str, Any], context: Dict[str, Any]) -> None:
     try:
-        dbg = (cfg.get("debug") or {})
+        dbg = cfg.get("debug") or {}
         if not dbg.get("save_missing_response"):
             return
-        dump_dir = Path(__file__).parent.parent / (dbg.get("dump_dir") or "debug_responses")
+        dump_dir = Path(__file__).parent.parent / (
+            dbg.get("dump_dir") or "debug_responses"
+        )
         dump_dir.mkdir(parents=True, exist_ok=True)
         from datetime import datetime
+
         ts = datetime.now().strftime("%Y%m%dT%H%M%S")
         safe_name = f"api2_400_{ts}.json"
         outp = dump_dir / safe_name

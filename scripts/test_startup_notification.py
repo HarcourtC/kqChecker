@@ -6,11 +6,12 @@ Usage:
 
 By default this script only prints the rendered subject/body so it's safe to run locally.
 """
-from pathlib import Path
-import sys
+
 import json
-from datetime import datetime
 import socket
+import sys
+from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -44,7 +45,11 @@ def render_startup(cfg):
     except Exception:
         host = "unknown"
 
-    ctx = {"date": now.strftime("%Y-%m-%d"), "time": now.strftime("%H:%M:%S"), "host": host}
+    ctx = {
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "host": host,
+    }
 
     class _SafeDict(dict):
         def __missing__(self, key):
@@ -74,7 +79,7 @@ def render_startup(cfg):
     return subj, body, ctx
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cfg = load_cfg()
     subj, body, ctx = render_startup(cfg)
     print("SUBJECT:")
@@ -85,4 +90,4 @@ if __name__ == '__main__':
     if "--send" in sys.argv:
         print("\nScheduling send (async) using SMTP config in config.json...")
         ok = send_miss_email_async(cfg, subject=subj, body=body, context=ctx)
-        print("Scheduled:" , ok)
+        print("Scheduled:", ok)

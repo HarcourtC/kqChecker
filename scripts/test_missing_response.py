@@ -13,11 +13,12 @@ Usage:
 The script will print where it saved the debug file (if any) and list the
 created file(s).
 """
-from pathlib import Path
+
 import json
 import logging
-from datetime import datetime
 import sys
+from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -46,7 +47,9 @@ class MockSession:
         self._data = data
 
     def post(self, url, json=None, headers=None, timeout=None):
-        logging.debug("MockSession.post called url=%s payload=%s headers=%s", url, json, headers)
+        logging.debug(
+            "MockSession.post called url=%s payload=%s headers=%s", url, json, headers
+        )
         return MockResponse(self._data)
 
 
@@ -54,8 +57,8 @@ def main():
     setup_logging()
 
     # prefer an api2 (attendance waterList) sample if available
-    sample_api2 = ROOT / 'sample_api2_response.json'
-    sample_fallback = ROOT / 'real_api_response_20251111T152425.json'
+    sample_api2 = ROOT / "sample_api2_response.json"
+    sample_fallback = ROOT / "real_api_response_20251111T152425.json"
     if sample_api2.exists():
         sample = sample_api2
     else:
@@ -66,16 +69,19 @@ def main():
         return 2
 
     print("using sample:", sample.name)
-    data = json.loads(sample.read_text(encoding='utf-8'))
+    data = json.loads(sample.read_text(encoding="utf-8"))
 
     # monkeypatch requests.Session used inside post_attendance_query by
     # replacing requests.Session with our factory that returns MockSession.
     try:
         import requests
+
         # replace Session class/constructor with a lambda that returns MockSession
         requests.Session = lambda: MockSession(data)
     except Exception:
-        print("requests not available in this Python environment. Install 'requests' and retry.")
+        print(
+            "requests not available in this Python environment. Install 'requests' and retry."
+        )
         return 3
 
     # monkeypatch notifier to avoid sending real emails during tests
@@ -83,13 +89,18 @@ def main():
         import kq.notifier as notifier
 
         def _stub_send_miss_email_async(cfg, subject=None, body=None, context=None):
-            logging.info("[TEST MODE] suppressed send_miss_email_async call; subject=%s", subject)
+            logging.info(
+                "[TEST MODE] suppressed send_miss_email_async call; subject=%s", subject
+            )
             return True
 
         notifier.send_miss_email_async = _stub_send_miss_email_async
         logging.debug("kq.notifier.send_miss_email_async monkeypatched to stub")
     except Exception:
-        logging.debug("failed to monkeypatch notifier; continuing (be careful: real emails may be sent)", exc_info=True)
+        logging.debug(
+            "failed to monkeypatch notifier; continuing (be careful: real emails may be sent)",
+            exc_info=True,
+        )
 
     # choose an event_time that exists in the sample date range
     event_time = datetime.now()
@@ -101,18 +112,21 @@ def main():
 
     # ensure debug dump dir is empty before running (so we can detect new files)
     from kq.config import load_config
+
     cfg = load_config() or {}
-    dbg = (cfg.get('debug') or {})
-    dump_dir = Path(__file__).parent.parent / (dbg.get('dump_dir') or 'debug_responses')
+    dbg = cfg.get("debug") or {}
+    dump_dir = Path(__file__).parent.parent / (dbg.get("dump_dir") or "debug_responses")
     dump_dir.mkdir(parents=True, exist_ok=True)
 
-    before = set(p.name for p in dump_dir.glob('missing_*.json'))
+    before = set(p.name for p in dump_dir.glob("missing_*.json"))
 
     print("Running post_attendance_query (mocked). This will not send HTTP or email.")
-    ok = post_attendance_query(event_time, courses=courses, pageSize=10, current=1, calendarBh="")
+    ok = post_attendance_query(
+        event_time, courses=courses, pageSize=10, current=1, calendarBh=""
+    )
     print("post_attendance_query returned:", ok)
 
-    after = set(p.name for p in dump_dir.glob('missing_*.json'))
+    after = set(p.name for p in dump_dir.glob("missing_*.json"))
     new = sorted(list(after - before))
     if new:
         print("Saved debug file(s):")
@@ -121,7 +135,7 @@ def main():
             print(" -", p)
             # show small preview
             try:
-                txt = p.read_text(encoding='utf-8')
+                txt = p.read_text(encoding="utf-8")
                 print(txt[:1000])
             except Exception as e:
                 print("  (failed to read file)", e)
@@ -131,5 +145,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())
