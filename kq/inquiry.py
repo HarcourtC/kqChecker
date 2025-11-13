@@ -92,24 +92,24 @@ def post_attendance_query(
                 resp.raise_for_status()
                 try:
                     resp_json = resp.json()
+
                     # If the API returned a 400-like structured response, optionally alert
                     try:
                         notifs_cfg = cfg.get("notifications") or {}
                         if (
-                            isinstance(resp_json, dict)
+                            notifs_cfg.get("alert_on_400")
+                            and isinstance(resp_json, dict)
                             and resp_json.get("code") == 400
-                            and notifs_cfg.get("alert_on_400")
                         ):
-                            # build subject/body from templates if provided
                             tpl_subj = (
-                                notifs_cfg.get("alert_400_subject")
-                                or "api2 returned error 400 on {date}"
+                                notifs_cfg.get("alert_subject")
+                                or "api2 returned 400 on {date}"
                             )
-                            tpl_body = notifs_cfg.get("alert_400_body") or (
-                                "api2 returned HTTP 400-like payload for request {payload} on {date}.\n\nResponse:\n{response}\n"
+                            tpl_body = (
+                                notifs_cfg.get("alert_body")
+                                or "payload: {payload}\nresponse: {response}"
                             )
 
-                            # safe format
                             class _TmpSafeDict(dict):
                                 def __missing__(self, key):
                                     return ""
@@ -134,22 +134,15 @@ def post_attendance_query(
                                 body = tpl_body
 
                             # raise a specific exception that callers can catch and handle
-                            # (for example: send email synchronously and exit the program)
                             raise API400Error(
                                 subj,
                                 body,
                                 context={"payload": payload, "response": resp_json},
                             )
-                    except Exception as exc:
-                        # If the inner logic deliberately raises API400Error, re-raise
-                        # so callers (scheduler/error_handler) can handle it. For other
-                        # exceptions, log debug info and continue.
-                        try:
-                            from .inquiry import API400Error as _API400
-                        except Exception:
-                            _API400 = API400Error
-                        if isinstance(exc, _API400):
-                            raise
+                    except API400Error:
+                        # deliberately raised, propagate to caller
+                        raise
+                    except Exception:
                         logging.debug(
                             "error while checking/issuing alert_on_400", exc_info=True
                         )
@@ -435,12 +428,95 @@ def post_attendance_query(
                                     )
                                     outp = dump_dir / fname
                                     try:
+                                        # capture richer debug info: raw response text and headers
+                                        extra = {}
+                                        try:
+                                            extra["response_text"] = resp.text
+                                        except Exception:
+                                            extra["response_text"] = None
+                                        try:
+                                            extra["response_headers"] = (
+                                                dict(resp.headers)
+                                                if getattr(resp, "headers", None)
+                                                else None
+                                            )
+                                        except Exception:
+                                            extra["response_headers"] = None
+                                        try:
+                                            extra["status_code"] = getattr(
+                                                resp, "status_code", None
+                                            )
+                                        except Exception:
+                                            extra["status_code"] = None
+                                        try:
+                                            extra["reason"] = getattr(
+                                                resp, "reason", None
+                                            )
+                                        except Exception:
+                                            extra["reason"] = None
+                                        try:
+                                            extra["encoding"] = getattr(
+                                                resp, "encoding", None
+                                            )
+                                        except Exception:
+                                            extra["encoding"] = None
+                                        try:
+                                            # save binary content as base64 to preserve raw bytes
+                                            import base64
+
+                                            content = getattr(resp, "content", None)
+                                            if content is None:
+                                                extra["response_content_b64"] = None
+                                            else:
+                                                try:
+                                                    extra["response_content_b64"] = (
+                                                        base64.b64encode(
+                                                            content
+                                                        ).decode("ascii")
+                                                    )
+                                                except Exception:
+                                                    # fallback: try to convert to text and base64 encode
+                                                    try:
+                                                        extra[
+                                                            "response_content_b64"
+                                                        ] = base64.b64encode(
+                                                            str(content).encode("utf-8")
+                                                        ).decode(
+                                                            "ascii"
+                                                        )
+                                                    except Exception:
+                                                        extra[
+                                                            "response_content_b64"
+                                                        ] = None
+                                        except Exception:
+                                            extra["response_content_b64"] = None
+                                        try:
+                                            req_headers = headers or {}
+                                            redacted = {}
+                                            for k, v in req_headers.items():
+                                                if isinstance(k, str) and k.lower() in (
+                                                    "synjones-auth",
+                                                    "authorization",
+                                                    "cookie",
+                                                ):
+                                                    redacted[k] = (
+                                                        f"REDACTED(len={len(str(v))})"
+                                                    )
+                                                else:
+                                                    redacted[k] = v
+                                            extra["request_headers"] = redacted
+                                        except Exception:
+                                            extra["request_headers"] = None
+
+                                        payload_obj = {
+                                            "payload": payload,
+                                            "response": resp_json,
+                                        }
+                                        payload_obj.update(extra)
+
                                         with outp.open("w", encoding="utf-8") as fh:
                                             json.dump(
-                                                {
-                                                    "payload": payload,
-                                                    "response": resp_json,
-                                                },
+                                                payload_obj,
                                                 fh,
                                                 ensure_ascii=False,
                                                 indent=2,

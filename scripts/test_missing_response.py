@@ -96,6 +96,15 @@ def main():
 
         notifier.send_miss_email_async = _stub_send_miss_email_async
         logging.debug("kq.notifier.send_miss_email_async monkeypatched to stub")
+
+        # Also ensure kq.inquiry's reference is replaced (inquiry imported send_miss_email_async at module import time)
+        try:
+            import kq.inquiry as inquiry_mod
+
+            inquiry_mod.send_miss_email_async = _stub_send_miss_email_async
+            logging.debug("kq.inquiry.send_miss_email_async monkeypatched to stub")
+        except Exception:
+            logging.debug("failed to monkeypatch kq.inquiry; continuing", exc_info=True)
     except Exception:
         logging.debug(
             "failed to monkeypatch notifier; continuing (be careful: real emails may be sent)",

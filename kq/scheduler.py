@@ -10,7 +10,7 @@ import time
 from datetime import date, datetime
 from datetime import time as dt_time
 from datetime import timedelta
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -72,8 +72,9 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
 
     log_path = logs_dir / "attendance.log"
     try:
-        rotating_handler = RotatingFileHandler(
-            str(log_path), maxBytes=10 * 1024 * 1024, backupCount=20, encoding="utf-8"
+        # rotate at midnight every day and keep 30 days of logs
+        rotating_handler = TimedRotatingFileHandler(
+            str(log_path), when="midnight", interval=1, backupCount=30, encoding="utf-8"
         )
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
         rotating_handler.setFormatter(formatter)
