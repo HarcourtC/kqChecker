@@ -9,3 +9,4 @@ logs/
 debug_responses/
 cas_token/chromedriver.exe
 cas_token/last_token.txt
+scripts/precommit_commit.ps1

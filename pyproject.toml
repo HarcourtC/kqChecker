@@ -5,9 +5,12 @@ target-version = ['py313']
 [tool.isort]
 profile = "black"
 line_length = 88
+known_first_party = ["kq", "cas_token"]
 
 [tool.ruff]
 line-length = 88
+
+[tool.ruff.lint]
 select = [
   "E", "F", "W", "C", "B", "I", "ANN",
 ]

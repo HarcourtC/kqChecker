@@ -219,4 +219,4 @@ Task Scheduler（GUI）要点
 此节记录了推荐的流程与实际操作示例。如需，我可以：
 
 - 把一份简化的“切换服务到 ykt”的操作指南追加到 `README.md`（一键 copy/paste 命令）；
-- 或根据你当前的服务类型（NSSM / Task Scheduler）生成精确的变更步骤。 
+- 或根据你当前的服务类型（NSSM / Task Scheduler）生成精确的变更步骤。

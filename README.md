@@ -159,4 +159,3 @@ A: 检查 `config.json.smtp` 中的 `host/port/username/password`，并尝试使
 
 ## 贡献与许可
 欢迎 issue / PR。请在提交前移除敏感配置信息（token/password），并在 README 中说明使用方法。此仓库默认未附带开源许可证，按需要添加 `LICENSE` 文件。
-
