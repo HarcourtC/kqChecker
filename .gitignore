@@ -3,8 +3,8 @@ geckodriver.exe
 attendance.log
 mindmap.md
 *.ics
-kq/__pycache__
-scripts/__pycache__
+**/__pycache__/**
 logs/
 .vscode/
 debug_responses/
+cas_token/chromedriver.exe
