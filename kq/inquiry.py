@@ -4,31 +4,22 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
-
-try:
-    import requests
-except Exception:
-    requests = None
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from .config import load_config
+from .errors import API400Error
 from .matcher import match_records_by_time
 from .notifier import send_miss_email_async
 
+# Use the HTTP client abstraction so we don't depend on `requests` all over the codebase.
+# Declare a typed placeholder for mypy and assign the real function if available.
+get_http_client: Optional[Callable[..., Any]] = None
+try:
+    from .http_client import get_http_client as _get_http_client
 
-class API400Error(Exception):
-    """Raised when api2 returns a structured 400-like payload and alerts are enabled.
-
-    Carries subject/body/context for downstream error handlers to send notifications.
-    """
-
-    def __init__(
-        self, subject: str, body: str, context: Optional[Dict[str, Any]] = None
-    ):
-        super().__init__(subject)
-        self.subject = subject
-        self.body = body
-        self.context = context or {}
+    get_http_client = _get_http_client
+except Exception:
+    get_http_client = None
 
 
 def post_attendance_query(
@@ -66,9 +57,9 @@ def post_attendance_query(
         headers.update(extra_headers)
 
     try:
-        if requests is None:
+        if get_http_client is None:
             logging.error(
-                "requests library not available. Install via 'pip install requests'"
+                "http client abstraction not available; ensure kq.http_client is present"
             )
             return False
 
@@ -77,7 +68,7 @@ def post_attendance_query(
             logging.error("api2 URL not configured in config.json")
             return False
 
-        session = requests.Session()
+        client = get_http_client()
         last_exc = None
         for attempt in range(retries + 1):
             try:
@@ -88,8 +79,13 @@ def post_attendance_query(
                     payload,
                     headers,
                 )
-                resp = session.post(url, json=payload, headers=headers, timeout=timeout)
-                resp.raise_for_status()
+                resp = client.post(url, json=payload, headers=headers, timeout=timeout)
+                # keep compatibility: expect requests.Response-like object
+                try:
+                    resp.raise_for_status()
+                except Exception:
+                    # allow downstream to handle non-2xx if needed
+                    raise
                 try:
                     resp_json = resp.json()
 
@@ -114,8 +110,8 @@ def post_attendance_query(
                                 def __missing__(self, key):
                                     return ""
 
-                            sd = _TmpSafeDict()
-                            sd.update(
+                            sd400 = _TmpSafeDict()
+                            sd400.update(
                                 {
                                     "date": date_str,
                                     "payload": json.dumps(payload, ensure_ascii=False),
@@ -125,11 +121,11 @@ def post_attendance_query(
                                 }
                             )
                             try:
-                                subj = tpl_subj.format_map(sd)
+                                subj = tpl_subj.format_map(sd400)
                             except Exception:
                                 subj = tpl_subj
                             try:
-                                body = tpl_body.format_map(sd)
+                                body = tpl_body.format_map(sd400)
                             except Exception:
                                 body = tpl_body
 

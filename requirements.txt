@@ -1,3 +1,5 @@
 requests>=2.28
 python-dateutil>=2.8.2
+# Validation
+pydantic>=1.10
 # Optional: add more packages if you enable extra features

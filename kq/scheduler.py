@@ -16,7 +16,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .config import load_config
 from .error_handler import handle_api400
-from .inquiry import API400Error, post_attendance_query
+from .errors import API400Error
+from .inquiry import post_attendance_query
 from .notifier import send_miss_email_async
 
 ROOT = Path(__file__).parent.parent

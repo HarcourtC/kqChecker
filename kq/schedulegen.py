@@ -9,21 +9,17 @@ import re
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
+# declare a typed placeholder so mypy understands possible None assignment
+get_http_client: Optional[Callable[..., Any]] = None
 try:
-    import requests
+    from .http_client import get_http_client as _get_http_client
+
+    get_http_client = _get_http_client
 except Exception:  # pragma: no cover - optional runtime dependency
-    requests = None
+    get_http_client = None
 import argparse
-import json
-import time
-from pathlib import Path
-
-try:
-    import requests
-except Exception:  # pragma: no cover - optional runtime dependency
-    requests = None
 
 
 def extract_rows(api_json: Any) -> List[Dict[str, Any]]:
@@ -215,7 +211,7 @@ def fetch_from_api1(
         from .config import load_config
     except Exception:
         # fallback to reading sibling config.json
-        def load_config():
+        def load_config(refresh: bool = False) -> Dict[str, Any]:
             p = Path(__file__).parent.parent / "config.json"
             try:
                 return json.loads(p.read_text(encoding="utf-8"))
@@ -229,15 +225,18 @@ def fetch_from_api1(
     if not url:
         raise RuntimeError("api1 not configured in config.json")
 
-    if requests is None:
-        raise RuntimeError("requests library not available; install requests")
+    if get_http_client is None:
+        raise RuntimeError(
+            "http client abstraction not available; install requests or provide a client"
+        )
 
-    session = requests.Session()
+    client = get_http_client()
     last_exc = None
     resp_json = None
     for attempt in range(retries + 1):
         try:
-            resp = session.post(url, json=payload, headers=headers, timeout=timeout)
+            resp = client.post(url, json=payload, headers=headers, timeout=timeout)
+            # expect requests.Response-like object
             resp.raise_for_status()
             resp_json = resp.json()
             break
@@ -299,7 +298,7 @@ def main(argv=None) -> int:
         from .config import load_config
     except Exception:
 
-        def load_config():
+        def load_config(refresh: bool = False) -> Dict[str, Any]:
             p = Path(__file__).parent.parent / "config.json"
             try:
                 return json.loads(p.read_text(encoding="utf-8"))
@@ -413,7 +412,7 @@ def fetch_periods_from_api(
         from .config import load_config
     except Exception:
 
-        def load_config():
+        def load_config(refresh: bool = False) -> Dict[str, Any]:
             p = Path(__file__).parent.parent / "config.json"
             try:
                 return json.loads(p.read_text(encoding="utf-8"))
@@ -427,15 +426,17 @@ def fetch_periods_from_api(
             "api3 URL not configured in config.json and no --url provided"
         )
 
-    if requests is None:
-        raise RuntimeError("requests library not available; install requests")
+    if get_http_client is None:
+        raise RuntimeError(
+            "http client abstraction not available; install requests or provide a client"
+        )
 
-    session = requests.Session()
+    client = get_http_client()
     last_exc = None
     resp_json = None
     for attempt in range(retries + 1):
         try:
-            resp = session.post(api_url, json=payload, timeout=timeout)
+            resp = client.post(api_url, json=payload, timeout=timeout)
             resp.raise_for_status()
             resp_json = resp.json()
             break

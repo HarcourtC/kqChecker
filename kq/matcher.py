@@ -1,7 +1,7 @@
 """Time-based matching helpers for attendance records."""
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 def match_records_by_time(
@@ -44,7 +44,9 @@ def match_records_by_time(
     after = timedelta(minutes=after_minutes)
 
     # build course times
-    course_times = []  # tuples (key_str, datetime, course_name)
+    course_times: List[Tuple[str, datetime, str]] = (
+        []
+    )  # tuples (key_str, datetime, course_name)
     for k, v in weekly.items():
         if not isinstance(k, str):
             continue
