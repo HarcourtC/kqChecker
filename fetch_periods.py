@@ -13,12 +13,11 @@ Default payload is set to the value you provided.
 import argparse
 import json
 import sys
-from pathlib import Path
 
 DEFAULT_PAYLOAD = {"calendarBh": 606, "weekOrder": 10, "weekNum": ""}
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Fetch periods.json from api3 and save to repo root"
     )
@@ -56,11 +55,6 @@ def main():
 
     try:
         # fetch and (optionally) save
-        save_path = (
-            args.save_path
-            if args.save and args.save_path
-            else (None if not args.save else None)
-        )
         # note: fetch_periods_from_api will default save path to repo root periods.json
         result = sg.fetch_periods_from_api(
             payload, url=args.url, save_path=args.save_path

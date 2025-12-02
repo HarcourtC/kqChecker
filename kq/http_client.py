@@ -39,7 +39,7 @@ class HTTPClient:
 
 
 class RequestsHTTPClient(HTTPClient):
-    def __init__(self):
+    def __init__(self) -> None:
         if requests is None:
             raise RuntimeError("requests library is required for RequestsHTTPClient")
         self._session = requests.Session()

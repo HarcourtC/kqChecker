@@ -6,15 +6,14 @@ work. The concrete notifier is created based on `cfg['smtp']`.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from .config import load_config
 from .notifier_client import SMTPNotifier
 
 
 def _render_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     class _SafeDict(dict):
-        def __missing__(self, key):
+        def __missing__(self, key: object) -> str:
             return ""
 
     ctx = _SafeDict()

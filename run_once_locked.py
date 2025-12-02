@@ -6,14 +6,14 @@ Use this script as the action for Task Scheduler or other schedulers.
 import os
 import subprocess
 import sys
-import time
+from typing import Optional
 
 LOCKNAME = "run_once_locked.lock"
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCKPATH = os.path.join(HERE, LOCKNAME)
 
 
-def acquire_lock():
+def acquire_lock() -> Optional[object]:
     if os.name == "nt":
         import msvcrt
 
@@ -36,7 +36,7 @@ def acquire_lock():
         return lock_file
 
 
-def release_lock(lock_file):
+def release_lock(lock_file: Optional[object]) -> None:
     try:
         if lock_file is None:
             return
@@ -66,7 +66,7 @@ def release_lock(lock_file):
             pass
 
 
-def main():
+def main() -> int:
     lock_file = acquire_lock()
     if lock_file is None:
         print("Another instance is running; exiting.")

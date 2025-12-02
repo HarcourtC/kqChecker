@@ -11,15 +11,16 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Optional, Tuple
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from kq.config import load_config
-from kq.notifier import send_miss_email_async
+from kq.config import load_config  # noqa: E402
+from kq.notifier import send_miss_email_async  # noqa: E402
 
 
-def load_cfg():
+def load_cfg() -> Dict:
     cfg = load_config() or {}
     if not cfg:
         ex = ROOT / "config_example.json"
@@ -31,7 +32,7 @@ def load_cfg():
     return cfg
 
 
-def render_match(cfg):
+def render_match(cfg: Dict) -> Tuple[Optional[str], Optional[str], Dict]:
     notifs = (cfg or {}).get("notifications") or {}
     tpl_subj = notifs.get("match_subject")
     tpl_body = notifs.get("match_body")
@@ -57,7 +58,7 @@ def render_match(cfg):
     }
 
     class _SafeDict(dict):
-        def __missing__(self, key):
+        def __missing__(self, key: object) -> str:
             return ""
 
     sd = _SafeDict()

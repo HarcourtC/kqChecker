@@ -14,7 +14,6 @@ the provided args.
 import argparse
 import runpy
 import sys
-from pathlib import Path
 
 
 def main() -> None:

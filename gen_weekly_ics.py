@@ -12,7 +12,6 @@ file is copied to <output>.bak before replacement.
 import argparse
 import os
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 from kq.icsgen import load_periods, load_weekly, make_ics

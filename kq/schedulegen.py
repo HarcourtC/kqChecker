@@ -4,12 +4,13 @@ Provides functions to extract rows from API responses, build a period map from
 periods.json and convert rows into a calendar mapping YYYY-MM-DD HH:MM:SS -> [courses].
 """
 
+import argparse
 import json
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # declare a typed placeholder so mypy understands possible None assignment
 get_http_client: Optional[Callable[..., Any]] = None
@@ -19,10 +20,9 @@ try:
     get_http_client = _get_http_client
 except Exception:  # pragma: no cover - optional runtime dependency
     get_http_client = None
-import argparse
 
 
-def extract_rows(api_json: Any) -> List[Dict[str, Any]]:
+def extract_rows(api_json: object) -> List[Dict[str, Any]]:
     """Extract a list of record dicts from various API response shapes.
 
     Supports:
@@ -70,7 +70,7 @@ def build_period_map(periods_json: Dict[str, Any]) -> Dict[int, Dict[str, str]]:
 _JT_RE = re.compile(r"^(\d+)(?:-(\d+))?")
 
 
-def parse_jt(jt_str: Optional[str]):
+def parse_jt(jt_str: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not jt_str:
         return None, None
     m = _JT_RE.match(str(jt_str).strip())
@@ -180,7 +180,7 @@ def build_weekly_calendar(
     return cal
 
 
-def save_weekly(path, calendar_map):
+def save_weekly(path: str, calendar_map: Dict) -> None:
     import json
     from pathlib import Path
 
@@ -233,7 +233,7 @@ def fetch_from_api1(
     client = get_http_client()
     last_exc = None
     resp_json = None
-    for attempt in range(retries + 1):
+    for _attempt in range(retries + 1):
         try:
             resp = client.post(url, json=payload, headers=headers, timeout=timeout)
             # expect requests.Response-like object
@@ -264,7 +264,7 @@ def fetch_from_api1(
     return cal
 
 
-def main(argv=None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     """Command-line entry for schedulegen: generate `weekly.json` from API or sample.
 
     Mirrors the previous behavior of the repository-level script `get_weekly_json.py`.
@@ -434,7 +434,7 @@ def fetch_periods_from_api(
     client = get_http_client()
     last_exc = None
     resp_json = None
-    for attempt in range(retries + 1):
+    for _attempt in range(retries + 1):
         try:
             resp = client.post(api_url, json=payload, timeout=timeout)
             resp.raise_for_status()

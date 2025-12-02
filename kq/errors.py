@@ -16,7 +16,7 @@ class API400Error(Exception):
 
     def __init__(
         self, subject: str, body: str, context: Optional[Dict[str, Any]] = None
-    ):
+    ) -> None:
         super().__init__(subject)
         self.subject = subject
         self.body = body

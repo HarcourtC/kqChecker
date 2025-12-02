@@ -19,41 +19,48 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from kq.inquiry import post_attendance_query
+from kq.inquiry import post_attendance_query  # noqa: E402
 
 
-def setup_logging():
+def setup_logging() -> None:
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(message)s")
 
 
 class MockResponse:
-    def __init__(self, data):
+    def __init__(self, data: object) -> None:
         self._data = data
         self.status_code = 200
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> None:
         return None
 
-    def json(self):
+    def json(self) -> object:
         return self._data
 
 
 class MockSession:
-    def __init__(self, data):
+    def __init__(self, data: object) -> None:
         self._data = data
 
-    def post(self, url, json=None, headers=None, timeout=None):
+    def post(
+        self,
+        url: str,
+        json: Optional[dict] = None,
+        headers: Optional[dict] = None,
+        timeout: Optional[int] = None,
+    ) -> "MockResponse":
         logging.debug(
             "MockSession.post called url=%s payload=%s headers=%s", url, json, headers
         )
         return MockResponse(self._data)
 
 
-def main():
+def main() -> int:
     setup_logging()
 
     # prefer an api2 (attendance waterList) sample if available
@@ -88,7 +95,12 @@ def main():
     try:
         import kq.notifier as notifier
 
-        def _stub_send_miss_email_async(cfg, subject=None, body=None, context=None):
+        def _stub_send_miss_email_async(
+            cfg: object,
+            subject: Optional[str] = None,
+            body: Optional[str] = None,
+            context: Optional[dict] = None,
+        ) -> bool:
             logging.info(
                 "[TEST MODE] suppressed send_miss_email_async call; subject=%s", subject
             )
@@ -127,7 +139,7 @@ def main():
     dump_dir = Path(__file__).parent.parent / (dbg.get("dump_dir") or "debug_responses")
     dump_dir.mkdir(parents=True, exist_ok=True)
 
-    before = set(p.name for p in dump_dir.glob("missing_*.json"))
+    before = {p.name for p in dump_dir.glob("missing_*.json")}
 
     print("Running post_attendance_query (mocked). This will not send HTTP or email.")
     ok = post_attendance_query(
@@ -135,8 +147,8 @@ def main():
     )
     print("post_attendance_query returned:", ok)
 
-    after = set(p.name for p in dump_dir.glob("missing_*.json"))
-    new = sorted(list(after - before))
+    after = {p.name for p in dump_dir.glob("missing_*.json")}
+    new = sorted(after - before)
     if new:
         print("Saved debug file(s):")
         for n in new:

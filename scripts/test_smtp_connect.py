@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 import socket
-import sys
 
 
-def check(host, port, timeout=5):
+def check(host: str, port: int, timeout: int = 5) -> None:
     s = socket.socket()
     s.settimeout(timeout)
     try:

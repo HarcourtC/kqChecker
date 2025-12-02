@@ -84,7 +84,7 @@ def match_records_by_time(
         return None
 
     # match
-    for key_str, course_dt, course_name in course_times:
+    for key_str, course_dt, _course_name in course_times:
         for rec in records:
             rt = parse_time_from_record(rec)
             if rt is None:

@@ -3,8 +3,9 @@
 import json
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional
 
 from .config import load_config
 from .errors import API400Error
@@ -23,8 +24,8 @@ except Exception:
 
 
 def post_attendance_query(
-    event_time,
-    courses=None,
+    event_time: datetime,
+    courses: Optional[List[str]] = None,
     pageSize: int = 10,
     current: int = 1,
     calendarBh: str = "",
@@ -70,12 +71,12 @@ def post_attendance_query(
 
         client = get_http_client()
         last_exc = None
-        for attempt in range(retries + 1):
+        for _attempt in range(retries + 1):
             try:
                 logging.debug(
                     "POST %s attempt %d payload=%s headers=%s",
                     url,
-                    attempt + 1,
+                    _attempt + 1,
                     payload,
                     headers,
                 )
@@ -107,7 +108,7 @@ def post_attendance_query(
                             )
 
                             class _TmpSafeDict(dict):
-                                def __missing__(self, key):
+                                def __missing__(self, key: object) -> str:
                                     return ""
 
                             sd400 = _TmpSafeDict()
@@ -215,7 +216,7 @@ def post_attendance_query(
                                 )
 
                                 # attempt to verify by room/location: only accept time-match if record's room matches scheduled room
-                                def _extract_room_from_record(r):
+                                def _extract_room_from_record(r: dict) -> Optional[str]:
                                     try:
                                         # possible shapes: top-level roomBean.roomnum or nested classWaterBean.roomBean.roomnum
                                         room = None
@@ -251,7 +252,7 @@ def post_attendance_query(
 
                                 import re
 
-                                def _norm(s):
+                                def _norm(s: Optional[str]) -> str:
                                     if not s:
                                         return ""
                                     # keep CJK unified ideographs and ASCII letters/digits
@@ -340,7 +341,7 @@ def post_attendance_query(
                                     # prepare structured candidate summary for logs to aid debugging
                                     try:
                                         cand_list = []
-                                        for k2, recs2 in time_matches.items():
+                                        for _k2, recs2 in time_matches.items():
                                             for r2 in recs2:
                                                 cand = {
                                                     "when": r2.get("operdate")
@@ -565,7 +566,7 @@ def post_attendance_query(
                             tpl_body = notifs.get("match_body")
 
                             class _SafeDict(dict):
-                                def __missing__(self, key):
+                                def __missing__(self, key: object) -> str:
                                     return ""
 
                             sd = _SafeDict()
@@ -628,7 +629,7 @@ def post_attendance_query(
                 last_exc = e
                 logging.warning(
                     "POST to api2 failed (attempt %d/%d): %s",
-                    attempt + 1,
+                    _attempt + 1,
                     retries + 1,
                     e,
                 )

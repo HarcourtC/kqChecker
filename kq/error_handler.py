@@ -7,7 +7,6 @@ log outcomes, and exit the process with a non-zero code.
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any, Dict
 

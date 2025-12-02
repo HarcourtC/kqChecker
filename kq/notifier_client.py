@@ -36,7 +36,7 @@ class Notifier:
 class SMTPNotifier(Notifier):
     def __init__(
         self, smtp_cfg: Dict[str, Any], max_workers: int = 2, timeout: int = 10
-    ):
+    ) -> None:
         self._cfg = smtp_cfg or {}
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._timeout = int(timeout or 10)

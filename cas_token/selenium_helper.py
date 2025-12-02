@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, urlparse
@@ -163,7 +162,7 @@ def open_login_page(
         return False
 
 
-def _safe_find(driver, selectors):
+def _safe_find(driver: object, selectors: List[tuple]) -> Optional[object]:
     """Try a sequence of selector tuples and return first found element.
 
     selectors: list of tuples (by, value) where by is a selenium By string.
@@ -213,7 +212,7 @@ def _extract_token_from_url(
 
 
 def _wait_for_token_after_login(
-    driver, account_info: dict, timeout: int = 30
+    driver: object, account_info: dict, timeout: int = 30
 ) -> Optional[str]:
     """Poll the browser for a redirect URL containing a token query param.
 
@@ -325,7 +324,7 @@ def _save_token_to_config(token_value: str, config_path: Optional[str] = None) -
         return False
 
 
-def _attempt_auto_login(driver, account_info: dict) -> bool:
+def _attempt_auto_login(driver: object, account_info: dict) -> bool:
     """Resilient autofill for username/password with JS fallbacks.
 
     Returns True if both username and password were set (not strictly whether login succeeded).
@@ -346,7 +345,6 @@ def _attempt_auto_login(driver, account_info: dict) -> bool:
 
     uname_xpath = account_info.get("username_xpath")
     pwd_xpath = account_info.get("password_xpath")
-    submit_xpath = account_info.get("submit_xpath")
 
     uname_candidates = []
     # Prefer explicit XPath from config
@@ -399,7 +397,7 @@ def _attempt_auto_login(driver, account_info: dict) -> bool:
             logging.info("could not locate username/password fields for auto-login")
             return False
 
-        def _set_value(el, val) -> bool:
+        def _set_value(el: object, val: object) -> bool:
             try:
                 try:
                     el.click()

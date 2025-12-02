@@ -109,7 +109,9 @@ POST_WINDOW_START = dt_time(7, 40)
 POST_WINDOW_END = dt_time(19, 40)
 
 
-def check_attendance(event_time, entries, dry_run: bool = False) -> None:
+def check_attendance(
+    event_time: datetime, entries: List[Dict[str, Any]], dry_run: bool = False
+) -> None:
     # entries: list of dicts {course, room, raw}
     course_names = [e.get("course") if isinstance(e, dict) else str(e) for e in entries]
     logging.info(
@@ -256,7 +258,7 @@ def main() -> None:
 
             # safe formatting fallback
             class _SafeDict(dict):
-                def __missing__(self, key):
+                def __missing__(self, key: object) -> str:
                     return ""
 
             sd = _SafeDict()
